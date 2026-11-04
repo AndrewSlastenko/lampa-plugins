@@ -85,7 +85,7 @@
                         }
                         network.native(url + (mode === 'open' ? '/torrents' : '/settings'), function (json) {
                             if (typeof json === 'string') { try { json = JSON.parse(json); } catch (ignore) { json = null; } }
-                            settle(!!json && typeof json === 'object' && !Array.isArray(json) && (mode === 'open' ? json.hash === args[0] && Array.isArray(json.file_stats) : typeof json.CacheSize !== 'undefined'));
+                            settle(!!json && typeof json === 'object' && !Array.isArray(json) && (mode === 'open' ? json.hash === args[0] : typeof json.CacheSize !== 'undefined'));
                         }, function () { settle(false); }, JSON.stringify(mode === 'open' ? {action:'get',hash:args[0]} : {action:'get'}), options);
                     } catch (ignore) { settle(false); }
                 }
@@ -116,7 +116,7 @@
                 if (typeof Lampa.Torserver[name] === 'function') Lampa.Torserver[name] = wrap(Lampa.Torserver[name], 'list');
             });
         }
-        var handle = {version:'0.1.1'};
+        var handle = {version:'0.1.2'};
         Lampa.Torrent._homeTorrServerAuto = handle;
         if (Lampa.SettingsApi && Lampa.SettingsApi.addParam) {
             Lampa.SettingsApi.addParam({component:'server',param:{name:SETTING,type:'trigger','default':true},
