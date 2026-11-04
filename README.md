@@ -58,4 +58,4 @@
 
 Плеер должен завершаться штатно с возвратом в Lampa. Плагин не добавляет отсутствующие серии, не восстанавливает недоступные источники и не реализует автоматическое разрешение следующего потока. Для удаления достаточно убрать URL расширения и перезапустить Lampa; записанная история остаётся.
 
-Все три расширения: `node --test test/plugin.test.js test/torrserver-auto.test.js test/yummy-native-progress.test.js` (50 тестов).
+Все три расширения: `node --test test/plugin.test.js test/torrserver-auto.test.js test/yummy-native-progress.test.js` (51 тест).

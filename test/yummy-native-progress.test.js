@@ -119,3 +119,9 @@ test('late voice A report after launching voice B cannot overwrite the new histo
   const second=s.calls[1].args[1].timeline.hash;assert.notEqual(second,first);
   s.emit(first,{time:108,duration:1200,percent:9});assert.equal(s.read()['42'].time,0);
 });
+test('native completion with zero duration/time still marks the known episode finished',()=>{
+  const s=setup(),p=payload();s.L.Android.openPlayer(p.url,p);const hash=s.calls[0].args[1].timeline.hash;
+  s.emit(hash,{time:0,duration:0,percent:100});
+  assert.equal(s.read()['42'].time,1200);
+  assert.equal(s.read()['42'].finished_episodes['1'],true);
+});

@@ -33,7 +33,7 @@
             !L.Activity || !L.Timeline || !L.Timeline.view || !L.Timeline.listener ||
             typeof L.Timeline.listener.follow !== 'function') return false;
         if (L.Android._homeYummyProgress) return true;
-        L.Android._homeYummyProgress = '0.1.0';
+        L.Android._homeYummyProgress = '0.1.1';
         var original = L.Android.openPlayer, contexts = {};
         function history() {
             var value = L.Storage.get('yani_playback_history', '{}');
@@ -85,11 +85,18 @@
         L.Timeline.listener.follow('update', function (event) {
             try {
                 var data = event && event.data, context = data && contexts[data.hash], road = data && data.road;
-                if (!context || !road || !finite(road.time) || road.time < 0 || !finite(road.duration) || road.duration <= 0) return;
+                if (!context || !road || !finite(road.time) || road.time < 0 || !finite(road.duration) || road.duration < 0) return;
                 var entries = history(), entry = entries[context.id];
                 if (!entry || String(entry.number) !== context.number || entry.voice !== context.voice || entry.video_id !== context.video_id) return;
-                entry.time = Math.min(road.time, road.duration);
-                entry.duration = road.duration;
+                var time = road.time, duration = road.duration;
+                // The native wrapper reports normal completion as0/0/100.
+                if (road.percent === 100 && time === 0 && duration === 0) {
+                    duration = Number(entry.duration);
+                    time = duration;
+                }
+                if (!finite(duration) || duration <= 0) return;
+                entry.time = Math.min(time, duration);
+                entry.duration = duration;
                 entry.updated_at = env.now ? env.now() : Date.now();
                 if (road.percent >= 95 || entry.time / entry.duration >= 0.95) {
                     entry.finished_episodes = Object.assign({}, entry.finished_episodes || {});
