@@ -52,6 +52,7 @@ test('cold reinstall resumes through native timeline despite a changed signed me
   const s=setup(),p=payload();s.L.Android.openPlayer(p.url,p);
   const hash=s.calls[0].args[1].timeline.hash;
   const next=setup();next.roads[hash]={time:108,duration:1200,percent:9};
+  const history=next.read();history['42'].time=108;next.values.yani_playback_history=JSON.stringify(history);
   const changed=payload();changed.url='https://other.example/new-token.mp4';
   next.L.Android.openPlayer(changed.url,changed);
   assert.equal(next.calls[0].args[1].timeline.hash,hash);
@@ -104,4 +105,17 @@ test('existing Yummy progress seeds the native timeline before the Android bridg
 test('ambiguous same-title anime entries do not attach an incorrect progress key',()=>{
   const s=setup({history:{'43':{title:'Example Anime',number:'1'}}});
   const p=payload();s.L.Android.openPlayer(p.url,p);assert.equal(s.calls[0].args[1],p);
+});
+test('explicit Yummy reset to zero clears this bridges old native position',()=>{
+  const s=setup(),p=payload();s.L.Android.openPlayer(p.url,p);const hash=s.calls[0].args[1].timeline.hash;
+  s.emit(hash,{time:600,duration:1200,percent:50});
+  const history=s.read();history['42'].time=0;s.values.yani_playback_history=JSON.stringify(history);
+  s.L.Android.openPlayer(p.url,p);assert.equal(s.calls[1].args[1].timeline.time,0);
+});
+test('late voice A report after launching voice B cannot overwrite the new history',()=>{
+  const s=setup(),p=payload();s.L.Android.openPlayer(p.url,p);const first=s.calls[0].args[1].timeline.hash;
+  const history=s.read();history['42'].voice='Voice B';history['42'].video_id=22;
+  s.values.yani_playback_history=JSON.stringify(history);s.L.Android.openPlayer(p.url,p);
+  const second=s.calls[1].args[1].timeline.hash;assert.notEqual(second,first);
+  s.emit(first,{time:108,duration:1200,percent:9});assert.equal(s.read()['42'].time,0);
 });

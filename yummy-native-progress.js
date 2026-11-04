@@ -22,8 +22,8 @@
         var match = rest.match(/^\s*[·|—-]\s*(?:серия|серія|episode)\s+(\d+(?:\.\d+)?)(?:\s|$|[·|—-])/i);
         return match ? match[1] : '';
     }
-    function hash(id, number) {
-        var key = 'home-yani-progress|' + id + '|' + number, value = 0;
+    function hash(id, number, entry) {
+        var key = 'home-yani-progress|' + id + '|' + number + '|' + (entry.video_id || '') + '|' + (entry.voice || ''), value = 0;
         for (var i = 0; i < key.length; i++) value = ((value << 5) - value + key.charCodeAt(i)) | 0;
         return (value & 0x7fffffff) || 1;
     }
@@ -44,10 +44,10 @@
             if (!item || item.timeline) return item;
             var number = episode(item.title, entry);
             if (!number) return item;
-            var out = Object.assign({}, item), key = hash(id, number);
+            var out = Object.assign({}, item), key = hash(id, number, entry);
             var timeline = L.Timeline.view(key);
             var savedTime = Number(entry.time);
-            if (!timeline.time && number === String(entry.number) && finite(savedTime) && savedTime > 0 && L.Timeline.update) {
+            if (number === String(entry.number) && finite(savedTime) && savedTime >= 0 && savedTime !== timeline.time && L.Timeline.update) {
                 L.Timeline.update({hash:key,time:savedTime,duration:Number(entry.duration || 0),
                     percent:entry.duration ? savedTime / entry.duration * 100 : 0});
                 timeline = L.Timeline.view(key);
