@@ -1,0 +1,4 @@
+test/device-*
+test/fixtures/
+docs/
+node_modules/
