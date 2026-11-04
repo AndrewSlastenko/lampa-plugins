@@ -3,7 +3,7 @@
     'use strict';
     var api = factory();
     if (typeof module === 'object' && module.exports) module.exports = api;
-    else if (root.Lampa) api.install(root.Lampa, {
+    else if (root.Lampa && root.Lampa.Android) api.install(root.Lampa, {
         changed: function (card) {
             if (root.$ && root.document) root.$(root.document).trigger('yani:watch-progress', [card]);
         }
@@ -33,7 +33,7 @@
             !L.Activity || !L.Timeline || !L.Timeline.view || !L.Timeline.listener ||
             typeof L.Timeline.listener.follow !== 'function') return false;
         if (L.Android._homeYummyProgress) return true;
-        L.Android._homeYummyProgress = '0.1.1';
+        L.Android._homeYummyProgress = '0.1.2';
         var original = L.Android.openPlayer, contexts = {};
         function history() {
             var value = L.Storage.get('yani_playback_history', '{}');

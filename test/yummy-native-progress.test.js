@@ -6,6 +6,12 @@ const path = require('node:path');
 const file = path.join(__dirname, '..', 'yummy-native-progress.js');
 const api = fs.existsSync(file) ? require(file) : {};
 
+test('Lampa extension check recognizes the progress bridge as a plugin',()=>{
+  // Lampa Extension.check() recognizes JavaScript by this literal API marker.
+  const source = fs.readFileSync(file, 'utf8');
+  assert.match(source, /Lampa\./, 'Lampa otherwise displays a synthetic 500 / unconfirmed status');
+});
+
 function setup(options = {}) {
   assert.equal(typeof api.install, 'function', 'progress bridge install must exist');
   const entry = {title:'Example Anime',number:'1',video_id:11,time:0,duration:1200,
