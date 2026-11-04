@@ -1,0 +1,111 @@
+/* TorrServer Auto - MIT. Uses only addresses configured in Lampa. */
+(function (root, factory) {
+    'use strict';
+    var api = factory();
+    if (typeof module === 'object' && module.exports) module.exports = api;
+    else {
+        root.HomeTorrServerAuto = api;
+        if (root.Lampa) api.install(root.Lampa, root);
+    }
+}(typeof window !== 'undefined' ? window : this, function () {
+    'use strict';
+    var SETTING = 'home_torrserver_auto';
+    function install(Lampa, environment) {
+        if (!Lampa || !Lampa.Torrent || !Lampa.Storage || !Lampa.Reguest ||
+            typeof Lampa.Torrent.start !== 'function' || typeof Lampa.Torrent.open !== 'function' ||
+            typeof Lampa.Storage.get !== 'function' || typeof Lampa.Storage.set !== 'function' ||
+            typeof Lampa.Storage.field !== 'function') return false;
+        if (Lampa.Torrent._homeTorrServerAuto) return Lampa.Torrent._homeTorrServerAuto;
+        var env = environment || (typeof window !== 'undefined' ? window : {});
+        var later = env.setTimeout || setTimeout, cancelTimer = env.clearTimeout || clearTimeout;
+        var pending = null, invoking = false;
+        function notify(message) { if (Lampa.Noty && Lampa.Noty.show) Lampa.Noty.show(message); }
+        function address(key) {
+            var value = Lampa.Storage.get(key, '');
+            if (typeof value !== 'string' || !value.trim()) return '';
+            value = value.trim();
+            if (Lampa.Utils && Lampa.Utils.checkEmptyUrl) value = Lampa.Utils.checkEmptyUrl(value);
+            else if (!/^https?:\/\//i.test(value)) value = 'http://' + value;
+            return value.replace(/\/+$/, '');
+        }
+        function enabled() {
+            var v = Lampa.Storage.get(SETTING, true);
+            return v !== false && v !== 'false' && v !== 0 && v !== '0';
+        }
+        function wrap(original) {
+            return function () {
+                var receiver = this, args = arguments;
+                if (invoking) return original.apply(receiver, args);
+                if (pending) { pending.cancel(); pending = null; }
+                var one = address('torrserver_url'), two = address('torrserver_url_two');
+                if (!enabled() || !one || !two || one === two ||
+                    (Lampa.Platform && Lampa.Platform.is('android') && !Lampa.Storage.field('internal_torrclient')))
+                    return original.apply(receiver, args);
+                var active = true, stopProbe = function () {};
+                var operation = {cancel:function () { active = false; stopProbe(); }};
+                pending = operation;
+                function finish(choice) {
+                    if (!active) return;
+                    operation.cancel();
+                    if (pending === operation) pending = null;
+                    if (!choice) { notify('TorrServer: оба настроенных сервера недоступны'); return; }
+                    Lampa.Storage.set('torrserver_use_link', choice);
+                    notify('TorrServer: выбран сервер ' + (choice === 'one' ? '1 (основной)' : '2 (резервный)'));
+                    invoking = true;
+                    try { original.apply(receiver, args); }
+                    finally { invoking = false; }
+                }
+                function probe(url, done) {
+                    var settled = false, network, timer;
+                    function clear() {
+                        if (timer !== undefined) cancelTimer(timer);
+                        if (network && network.clear) { try { network.clear(); } catch (ignore) {} }
+                    }
+                    function settle(ok) {
+                        if (settled || !active) return;
+                        settled = true;
+                        clear();
+                        done(ok);
+                    }
+                    stopProbe = function () { settled = true; clear(); };
+                    timer = later(function () { settle(false); }, 1500);
+                    try {
+                        network = new Lampa.Reguest();
+                        network.timeout(1500);
+                        var options = {};
+                        if (Lampa.Storage.field('torrserver_auth') && Lampa.Base64 && Lampa.Base64.encode) {
+                            var password = Lampa.Storage.value ? Lampa.Storage.value('torrserver_password') : Lampa.Storage.get('torrserver_password', '');
+                            options.headers = {Authorization:'Basic ' + Lampa.Base64.encode(Lampa.Storage.get('torrserver_login', '') + ':' + password)};
+                        }
+                        network.native(url + '/settings', function (json) {
+                            if (typeof json === 'string') { try { json = JSON.parse(json); } catch (ignore) { json = null; } }
+                            settle(!!json && typeof json === 'object' && !Array.isArray(json) && typeof json.CacheSize !== 'undefined');
+                        }, function () { settle(false); }, JSON.stringify({action:'get'}), options);
+                    } catch (ignore) { settle(false); }
+                }
+                probe(one, function (ok) {
+                    if (ok) finish('one');
+                    else probe(two, function (healthy) { finish(healthy ? 'two' : null); });
+                });
+            };
+        }
+        if (Lampa.Listener && Lampa.Listener.follow) {
+            Lampa.Listener.follow('activity', function (event) {
+                if (pending && event && event.type === 'start') { pending.cancel(); pending = null; }
+            });
+        }
+        var originals = {start:Lampa.Torrent.start, open:Lampa.Torrent.open};
+        Lampa.Torrent.start = wrap(originals.start);
+        Lampa.Torrent.open = wrap(originals.open);
+        var handle = {version:'0.1.0'};
+        Lampa.Torrent._homeTorrServerAuto = handle;
+        if (Lampa.SettingsApi && Lampa.SettingsApi.addParam) {
+            Lampa.SettingsApi.addParam({component:'server',param:{name:SETTING,type:'trigger','default':true},
+                field:{name:'Автовыбор TorrServer',description:'Перед новым запуском: сервер 1, иначе сервер 2. Проверка до 1,5 с на сервер. Оба недоступны — запуск отменяется.'}});
+        }
+        return handle;
+    }
+    return {install:install};
+}));
+
+
