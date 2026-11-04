@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const target = path.join(__dirname, '..', 'plugin.js');
+const target = path.join(__dirname, '..', 'torrent-title-search.js');
 const api = fs.existsSync(target) ? require(target) : {};
 
 function need(name) { assert.equal(typeof api[name], 'function', name + ' must be implemented'); }

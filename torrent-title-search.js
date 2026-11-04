@@ -1,4 +1,4 @@
-/* Home Multi-title Search 0.1.0 - MIT - no accounts or telemetry. */
+/* Torrent Title Search 0.1.1 - MIT - no accounts or telemetry. */
 (function (root, factory) {
     'use strict';
     var api = factory();
@@ -227,19 +227,19 @@
             if (!enabled()) { controller.clear(); return savedGet.call(Lampa.Parser, params, complete, fail); }
             return controller.get(params, complete, fail);
         }
-        var handle = {version:'0.1.0', controller:controller, uninstall:function () { controller.clear(); if (Lampa.Parser.get === wrapped) { Lampa.Parser.get = savedGet; Lampa.Parser.clear = savedClear; } }};
+        var handle = {version:'0.1.1', controller:controller, uninstall:function () { controller.clear(); if (Lampa.Parser.get === wrapped) { Lampa.Parser.get = savedGet; Lampa.Parser.clear = savedClear; } }};
         wrapped.__homeMultiTitle = handle;
         Lampa.Parser.get = wrapped; Lampa.Parser.clear = controller.clear;
         function settings() {
             if (registered || !Lampa.SettingsApi) return;
             registered = true;
-            Lampa.SettingsApi.addComponent({component:SETTING, name:'Поиск по названиям', icon:'<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l6 6" stroke="currentColor" stroke-width="2"/></svg>'});
+            Lampa.SettingsApi.addComponent({component:SETTING, name:'Поиск торрентов по названиям', icon:'<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l6 6" stroke="currentColor" stroke-width="2"/></svg>'});
             Lampa.SettingsApi.addParam({component:SETTING, param:{name:SETTING,type:'trigger','default':true}, field:{name:'Искать по нескольким названиям',description:'Русское, английское и оригинальное названия. Одинаковые раздачи объединяются.'}});
             if (Lampa.Storage.listener) Lampa.Storage.listener.follow('change', function (event) { if (event.name === SETTING) controller.clear(); });
         }
         if (environment.appready) settings();
         else if (Lampa.Listener) Lampa.Listener.follow('app', function (event) { if (event.type === 'ready') settings(); });
-        if (Lampa.Manifest) Lampa.Manifest.plugins = {type:'other', version:handle.version, name:'Поиск по нескольким названиям', description:'Автоматический поиск торрентов по переводам и оригинальному названию'};
+        if (Lampa.Manifest) Lampa.Manifest.plugins = {type:'other', version:handle.version, name:'Поиск торрентов по названиям', description:'Автоматический поиск торрентов по переводам и оригинальному названию'};
         return handle;
     }
     return {collectQueries:collectQueries, mergeResults:mergeResults, createController:createController, install:install};
