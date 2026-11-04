@@ -116,7 +116,48 @@
                 if (typeof Lampa.Torserver[name] === 'function') Lampa.Torserver[name] = wrap(Lampa.Torserver[name], 'list');
             });
         }
-        var handle = {version:'0.1.2'};
+        // Lampa otherwise starts at >=95% (or 0/0) while TorrServer may still
+        // be fetching the tail index. Its preload state, not the byte counter,
+        // tells us that the start/end preload has actually finished.
+        function guardedStream(url) {
+            if (typeof url !== 'string' || !/[?&](?:stat|preload)(?:[=&]|$)/.test(url)) return false;
+            return ['torrserver_url', 'torrserver_url_two'].some(function (key) {
+                var base = address(key);
+                if (!base || url.indexOf(base + '/stream') !== 0) return false;
+                return /^[/?]|^$/.test(url.slice((base + '/stream').length));
+            });
+        }
+        function waitForPreload(response) {
+            if (!response || typeof response !== 'object' || Array.isArray(response) ||
+                typeof response.stat !== 'number' || response.stat < 0 || response.stat > 2) return response;
+            var safe = {}, size = Number(response.preload_size), bytes = Number(response.preloaded_bytes);
+            Object.keys(response).forEach(function (key) { safe[key] = response[key]; });
+            if (!isFinite(size) || size <= 0) size = 1;
+            if (!isFinite(bytes) || bytes < 0) bytes = 0;
+            // Keep the real growing byte counter: Lampa uses it to reset its
+            // no-progress watchdog even while the final index is being fetched.
+            safe.preload_size = Math.max(size, bytes / 0.94);
+            safe.preloaded_bytes = bytes;
+            return safe;
+        }
+        var preloadGuard = false;
+        if (Lampa.Listener && typeof Lampa.Listener.follow === 'function') {
+            Lampa.Listener.follow('request_before', function (event) {
+                var params = event && event.params;
+                if (!params || !guardedStream(params.url) || typeof params.complite !== 'function' ||
+                    params.complite._homeTorrServerPreload) return;
+                var complete = params.complite;
+                var guarded = function (response) {
+                    var args = Array.prototype.slice.call(arguments);
+                    args[0] = waitForPreload(response);
+                    return complete.apply(this, args);
+                };
+                guarded._homeTorrServerPreload = true;
+                params.complite = guarded;
+            });
+            preloadGuard = true;
+        }
+        var handle = {version:'0.1.3',preloadGuard:preloadGuard};
         Lampa.Torrent._homeTorrServerAuto = handle;
         if (Lampa.SettingsApi && Lampa.SettingsApi.addParam) {
             Lampa.SettingsApi.addParam({component:'server',param:{name:SETTING,type:'trigger','default':true},
