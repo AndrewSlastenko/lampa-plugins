@@ -2,7 +2,7 @@
 (function(root,factory){
  'use strict';var api=factory();
  if(typeof module==='object'&&module.exports)module.exports=api;
- else if(root.Lampa&&root.Lampa.Player){var log=function(message){if(root.console)root.console.info('HomeSeriesNative '+message);};log('installed='+api.install(root.Lampa,{log:log}));}
+ else if(root.Lampa&&root.Lampa.Player){var log=function(message){if(root.console)root.console.log('HomeSeriesNative '+message);};log('installed='+api.install(root.Lampa,{log:log}));}
 }(typeof window!=='undefined'?window:this,function(){
  'use strict';
  function integer(v,min,max){return /^(0|[1-9][0-9]*)$/.test(String(v))&&Number(v)>=min&&Number(v)<=max;}
@@ -42,7 +42,7 @@
   L.__homeSeriesNative=true;env=env||{};
   var later=env.setTimeout||setTimeout,clear=env.clearTimeout||clearTimeout;
   function debug(message){if(env.log)env.log(message);}
-  var states=[],generation=0,pending=null,active=null,internal=false;
+  var states=[],captures=[],generation=0,pending=null,active=null,internal=false;
   var sequence=0,prefix='home-series-launch:',nonce=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   var timelineView=L.Timeline.view,timelineUpdate=L.Timeline.update;
   L.Timeline.view=function(hash){if(String(hash).indexOf(prefix)===0)return Object.assign({hash:hash,time:0,duration:0,percent:0},active&&active.hash===hash?active.nativeRoad:{});return timelineView.apply(this,arguments);};
@@ -82,12 +82,21 @@
   L.Component.add=function(name,component){return add.call(this,name,name==='online_mod'?decorate(component):component);};
   var existing=L.Component.get('online_mod');if(existing)L.Component.add('online_mod',existing);
   var open=L.Android.openPlayer;
+  function structured(item,fallback){
+   if(!item)return null;if(item.torrent_hash)return torrentMetadata(item);
+   if(!integer(item.season,0,999)||!integer(item.episode,1,99999))return null;
+   var id=identity(item.card)||(fallback&&fallback.id);return id?{id:id,season:Number(item.season),episode:Number(item.episode)}:null;
+  }
   L.Android.openPlayer=function(url,data){
    if(!internal)cancel();
-   if(!internal&&data&&data.torrent_hash&&enabled('series_native_skip')){
-    function copy(item){var out=Object.assign({},item),meta=torrentMetadata(item);delete out.playlist;if(meta)out.url=annotate(item.url,meta);return out;}
-    var cloned=copy(data),meta=torrentMetadata(data);if(Array.isArray(data.playlist))cloned.playlist=data.playlist.map(copy);
-    var args=Array.prototype.slice.call(arguments);args[0]=meta?annotate(url,meta):url;args[1]=cloned;return open.apply(this,args);
+   var captured=null;for(var i=captures.length-1;i>=0;i--)if(captures[i].data===data&&captures[i].activity===L.Activity.active()){captured=captures[i].meta;break;}
+   var meta=structured(data,captured);
+   if(!internal&&data&&enabled('series_native_skip')&&(meta||Array.isArray(data.playlist)&&data.playlist.some(function(p){return !!structured(p,captured);}))) {
+    function copy(item){var out=Object.assign({},item),m=structured(item,captured);delete out.playlist;if(m)out.url=annotate(item.url,m);return out;}
+    var cloned=copy(data);if(Array.isArray(data.playlist))cloned.playlist=data.playlist.map(copy);
+    var args=Array.prototype.slice.call(arguments);args[0]=meta?annotate(url,meta):url;args[1]=cloned;
+    if(meta)debug('structured native episode '+meta.id+':'+meta.season+':'+meta.episode);
+    return open.apply(this,args);
    }
    return open.apply(this,arguments);
   };
@@ -132,6 +141,8 @@
   }
   L.Player.listener.follow('create',function(event){
    cancel();var data=event&&event.data,activity=L.Activity.active();
+   var publicId=activity&&identity(activity.movie||activity.card),captured=structured(data,publicId?{id:publicId}:null);
+   if(captured){captures.push({data:data,meta:captured,activity:activity});if(captures.length>16)captures.shift();}
    if(activity&&activity.component==='online_mod')debug('create player='+L.Storage.field('player')+' timeline='+Boolean(data&&data.timeline)+' states='+states.length);
    if(!data||!data.timeline||!activity||activity.component!=='online_mod'||
      (!enabled('series_native_skip')&&!enabled('series_native_next'))||!L.Platform||!L.Platform.is('android')||

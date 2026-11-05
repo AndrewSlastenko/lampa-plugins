@@ -124,3 +124,17 @@ test('season folder never selects a second token from a multi-episode file',()=>
   s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url,path);
  }
 });
+
+test('structured BWA-style episodes capture show before native handoff and preserve provider playlist',()=>{
+ const s=setup();s.setActivity({component:'bwa',movie:{id:1396,original_name:'Breaking Bad',source:'tmdb'}});
+ const a={url:'https://cdn/pilot',season:1,episode:1,timeline:{hash:71},title:'Not parsed'};
+ const b={url:'https://cdn/two',season:1,episode:2,timeline:{hash:72}};a.playlist=[a,b];
+ s.L.Player.play(a);assert.match(s.opened[0].url,/homeafr_series=tmdb:1396:1:1:3/);
+ assert.match(s.opened[0].data.playlist[1].url,/homeafr_series=tmdb:1396:1:2:3/);
+ assert.equal(s.opened[0].data.playlist[0].timeline,a.timeline);
+});
+test('structured native payload uses its own card and does not infer episodes from title',()=>{
+ const s=setup(),a={url:'https://cdn/one',card:{id:1396,original_name:'X'},season:1,episode:1};s.L.Android.openPlayer(a.url,a);
+ assert.match(s.opened[0].url,/homeafr_series=tmdb:1396:1:1:3/);
+ const b={url:'https://cdn/unknown',card:{id:1396,original_name:'X'},title:'S01E01'};s.L.Android.openPlayer(b.url,b);assert.equal(s.opened[1].url,b.url);
+});
