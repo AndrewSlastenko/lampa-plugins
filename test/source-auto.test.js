@@ -62,9 +62,9 @@ test('timeout completes once, cancellation suppresses late callbacks and malform
  const j=harness({veoveo:'timeout'});let late=0;const stop=j.scanner.scan(j.movie,{},()=>late++);stop();j.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});j.tick(15000);assert.equal(late,0);
 });
 
-function integration({deferred=false,deferredOriginal=false,stored={},serial=true}={}){
+function integration({deferred=false,deferredOriginal=false,deferredHandoff=false,stored={},serial=true}={}){
  let active={component:'bwa_online',movie:{id:1396,source:'tmdb',...(serial?{name:'Breaking Bad',original_name:'Breaking Bad'}:{title:'Film'})}};
- const values={...stored},launched=[],requests=[],pending=[],originalPending=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
+ const values={...stored},launched=[],requests=[],pending=[],originalPending=[],handoffs=[],playerListeners=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
  const flat=g=>({...g,qualities:Object.fromEntries(Object.entries(g.qualities).map(([q,v])=>[q,v.url]))});
  const registry={};
  registry.bwa_online=function(object){
@@ -78,14 +78,14 @@ function integration({deferred=false,deferredOriginal=false,stored={},serial=tru
   this.switchSeason=()=>{};this.destroy=()=>{};
   this.playEpisode=(s,e)=>{const finish=()=>{this.buildFilters();this.playGroupEpisode(flat(groups.find(g=>g.voice===selected)||groups[0]),s,e,groups.map(flat));};if(deferredOriginal)originalPending.push(finish);else finish();};
   this.filterVoice=v=>{selected=v;values.bwa_lastvoice={1396:{src:source,voice:v}};this.buildFilters();};
-  this.playGroupEpisode=(group,s,e)=>launched.push({source,group,s,e});this.play=g=>launched.push({source,group:g});
+  this.playGroupEpisode=(group,s,e)=>{const go=()=>{let aborted=false;const data={url:Object.values(group.qualities)[0],season:s,episode:e};playerListeners.forEach(fn=>fn({data,abort:()=>aborted=true}));if(!aborted)launched.push({source,group,s,e});};if(deferredHandoff)handoffs.push(go);else go();};this.play=g=>launched.push({source,group:g});
  };
  const L={Component:{get:k=>registry[k],add:(k,v)=>registry[k]=v},Activity:{active:()=>active},
  Storage:{get:(k,f)=>values[k]===undefined?f:values[k],set:(k,v)=>values[k]=v},Noty:{show:t=>notices.push(t)},
- Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}}};
+ Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}},Player:{listener:{follow:(event,fn)=>playerListeners.push(fn)}}};
  const env={BWA_API:{resolve:(m,opts,cb)=>{const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
  assert.equal(api.install(L,env),true,'adapter installs');const c=new registry.bwa_online(active);
- return {L,c,values,launched,requests,pending,originalPending,notices,leave:()=>active={component:'full'},groups};
+ return {L,c,values,launched,requests,pending,originalPending,handoffs,notices,leave:()=>active={component:'full'},groups};
 }
 test('initial selection applies preferred voice before rendering without launching on its own',()=>{
  const h=integration();h.c.requestStreams(false);assert.equal(h.launched.length,0);
@@ -145,4 +145,9 @@ test('a seed timeout still tries other free providers within the overall deadlin
 test('standard Lampa source filter also exposes full rescan',()=>{
  const h=integration();h.L.Select.show({title:'Источник',items:[{title:'VeoVeo',source:'veoveo'}],onSelect:()=>{}});
  assert.ok(h.L.lastMenu.items.some(x=>x.homeAutoFull));
+});
+test('late BWA playlist/preflight handoff is cancelled at the final player boundary',()=>{
+ for(const stop of [h=>h.c.destroy(),h=>h.c.changeBalanser('videodb'),h=>h.leave()]){
+  const h=integration({deferredHandoff:true});h.c.playEpisode(1,2);stop(h);h.handoffs.forEach(fn=>fn());assert.equal(h.launched.length,0);
+ }
 });

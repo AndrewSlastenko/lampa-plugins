@@ -80,7 +80,11 @@
  function install(L,env){
   if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.0',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.0';env=env||{};var owners=[];
+  L.__homeSourceAuto='0.1.0';env=env||{};var owners=[],permits=[];
+  if(L.Player&&L.Player.listener&&L.Player.listener.follow)L.Player.listener.follow('create',function(event){
+   var data=event&&event.data;if(!data||typeof data.url!=='string'||!data.episode)return;
+   for(var i=permits.length-1;i>=0;i--){var p=permits[i];if(p.urls.indexOf(data.url)>=0&&Number(data.season)===p.season&&Number(data.episode)===p.episode){if(!p.valid()&&event.abort)event.abort();break;}}
+  });
   var scanner=createScanner({resolve:function(movie,opts,cb){if(!env.BWA_API||typeof env.BWA_API.resolve!=='function')return cb(new Error('BWA API unavailable'));env.BWA_API.resolve(movie,opts,cb);},setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,now:env.now});
   function enabled(){return L.Storage.get('source_auto_enabled',true)!==false&&env.BWA_API&&typeof env.BWA_API.resolve==='function';}
   function notice(text){if(L.Noty)L.Noty.show(text);}
@@ -163,6 +167,9 @@
      if(wanted){group=(groups||[group]).filter(function(g){return g.voice===wanted.voice;})[0];if(!group){notice('Озвучка стала недоступна. Выберите другую вручную');return;}}
      var list=candidates({source:wanted?wanted.source:'manual',voices:[group]}),best=choose(list);
      if(enabled()&&best){var clone=Object.assign({},group);clone.order=[best.quality];clone.qualities={};clone.qualities[best.quality]=group.qualities[best.quality];group=clone;}
+     var token=epoch,urls=[];
+     [group,wanted&&wanted.group].forEach(function(g){if(g&&g.qualities)Object.keys(g.qualities).forEach(function(q){var v=g.qualities[q];if(typeof v==='string')urls.push(v);else if(v){if(v.url)urls.push(v.url);if(v.alt)urls.push(v.alt);}});});
+     permits.push({urls:urls,season:Number(season),episode:Number(episode),valid:function(){return valid(token);}});if(permits.length>16)permits.shift();
      return playGroup.call(this,group,season,episode,groups);
     };
     if(typeof play==='function')c.play=function(group){
