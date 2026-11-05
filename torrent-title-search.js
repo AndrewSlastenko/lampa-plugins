@@ -1,4 +1,4 @@
-/* Torrent Title Search 0.1.1 - MIT - no accounts or telemetry. */
+/* Torrent Title Search 0.1.2 - MIT - no accounts or telemetry. */
 (function (root, factory) {
     'use strict';
     var api = factory();
@@ -28,7 +28,8 @@
         if (explicit) return explicit;
         var list = aliases(movie);
         for (var i = 0; i < list.length; i++) {
-            if (/^(US|GB|AU|CA)$/i.test(list[i].iso_3166_1 || '')) return clean(list[i].title || list[i].name);
+            var candidate=clean(list[i].title || list[i].name);
+            if (/^(US|GB|AU|CA)$/i.test(list[i].iso_3166_1 || '') && !/^[A-Za-z]{1,2}$/.test(candidate)) return candidate;
         }
         return '';
     }

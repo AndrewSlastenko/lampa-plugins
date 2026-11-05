@@ -58,6 +58,11 @@ test('TV alias results and unavailable English metadata do not prevent base quer
   const q = api.collectQueries({movie:{name:'Название',original_name:'Original',alternative_titles:{results:[{iso_3166_1:'RU',title:'Другое название'}]}}}, {});
   assert.deepEqual(q, ['Название','Другое название','Original']);
 });
+test('two-letter alternate acronyms do not broaden a series search; real short originals remain', () => {
+  const q=api.collectQueries({movie:{name:'Во все тяжкие',original_name:'Breaking Bad',alternative_titles:{results:[{iso_3166_1:'US',title:'BB'}]}}},{});
+  assert.deepEqual(q,['Во все тяжкие','Breaking Bad']);
+  assert.deepEqual(api.collectQueries({movie:{title:'Оно',original_title:'It'}},{}),['Оно','It']);
+});
 test('BTIH dedup handles tracker differences, base32 encoding and preserves Lampa history hash', () => {
   need('mergeResults');
   const hash = '0123456789abcdef0123456789abcdef01234567';
