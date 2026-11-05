@@ -29,21 +29,26 @@
 
 **Files:** source-auto.js, test/source-auto.test.js
 
-- [ ] Write failing tests for voice tiers, resolutions, missing/unsafe candidates, sticky voice, exact episode arguments, timeouts, cancellation and cache expiry. Run `node --test test/source-auto.test.js`; expect RED.
-- [ ] Implement pure ranking and scanner using BWA_API.resolve. Run focused tests and `node --test "test/*.test.js"`; expect GREEN. Commit.
+- [x] Write failing tests for voice tiers, resolutions, missing/unsafe candidates, sticky voice, exact episode arguments, timeouts, cancellation and cache expiry. Run `node --test test/source-auto.test.js`; expect RED.
+- [x] Implement pure ranking and scanner using BWA_API.resolve. Run focused tests and `node --test "test/*.test.js"`; expect GREEN. Commit.
 
 ### Task 2: BWA integration and native resume
 
 **Files:** source-auto.js, series-native.js, test/source-auto.test.js, test/series-native.test.js
 
-- [ ] Write failing lifecycle tests for initial choice, episode-specific rescan, manual override, missing saved voice and native next resume. Run focused tests; expect RED.
-- [ ] Implement component decorator, settings and rescan action, preserving original BWA launch paths. Run full suite and syntax checks; expect GREEN. Commit.
+- [x] Write failing lifecycle tests for initial choice, episode-specific rescan, manual override, missing saved voice and native next resume. Run focused tests; expect RED.
+- [x] Implement component decorator, settings and rescan action, preserving original BWA launch paths. Run full suite and syntax checks; expect GREEN. Commit.
 
 ### Task 3: Review, publish and device verification
 
 **Files:** README.md, index.html if appropriate, project memory outside public repository
 
-- [ ] Obtain one fresh-context review; resolve material findings with RED/GREEN regressions.
-- [ ] Publish on the already authorized GitHub Pages site. Verify public bytes and install through normal Lampa extensions UI.
-- [ ] Verify initial scan, actual launch, return/resume, manual override and cancellation on RockTek. Record observed limits, keep history.
-- [ ] Update memory, run final tests, inspect git worktrees and chat attachments, remove only task-owned temporary resources.
+- [x] Obtain one fresh-context review; resolve material findings with RED/GREEN regressions.
+- [x] Publish on the already authorized GitHub Pages site. Verify public bytes and install through normal Lampa extensions UI.
+- [x] Verify initial scan, actual launch, return/resume, manual override and cancellation on RockTek. Record observed limits, keep history.
+- [x] Update memory, run final tests, inspect git worktrees and chat attachments, remove only task-owned temporary resources.
+
+
+## Completion evidence
+
+122 JavaScript checks, source review with regression fixes, public-byte equality, Lampa extension200/Working, real source scan/episode resume/manual voice UI checks. Playback scan keeps the list intact. During actual next-episode validation a separate pre-existing static-player ownership race was reproduced and fixed in JustPlayer Home AFR.8 (674 JVMchecks, ARMv7 build, fresh focused review, actual failing/passing handoff log). Memory records precise acceptance limits and final restored viewing choice.
