@@ -62,7 +62,7 @@ test('timeout completes once, cancellation suppresses late callbacks and malform
  const j=harness({veoveo:'timeout'});let late=0;const stop=j.scanner.scan(j.movie,{},()=>late++);stop();j.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});j.tick(15000);assert.equal(late,0);
 });
 
-function integration({deferred=false,deferredOriginal=false,deferredHandoff=false,stored={},serial=true}={}){
+function integration({deferred=false,deferredOriginal=false,deferredHandoff=false,foreignDecorator=false,stored={},serial=true}={}){
  let active={component:'bwa_online',movie:{id:1396,source:'tmdb',...(serial?{name:'Breaking Bad',original_name:'Breaking Bad'}:{title:'Film'})}};
  const values={...stored},launched=[],requests=[],pending=[],originalPending=[],handoffs=[],playerListeners=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
  const flat=g=>({...g,qualities:Object.fromEntries(Object.entries(g.qualities).map(([q,v])=>[q,v.url]))});
@@ -83,9 +83,11 @@ function integration({deferred=false,deferredOriginal=false,deferredHandoff=fals
  const L={Component:{get:k=>registry[k],add:(k,v)=>registry[k]=v},Activity:{active:()=>active},
  Storage:{get:(k,f)=>values[k]===undefined?f:values[k],set:(k,v)=>values[k]=v},Noty:{show:t=>notices.push(t)},
  Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}},Player:{listener:{follow:(event,fn)=>playerListeners.push(fn)}}};
- const env={BWA_API:{resolve:(m,opts,cb)=>{const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
- assert.equal(api.install(L,env),true,'adapter installs');const c=new registry.bwa_online(active);
- return {L,c,values,launched,requests,pending,originalPending,handoffs,notices,leave:()=>active={component:'full'},groups};
+ const probes=[];const env={BWA_API:{resolve:(m,opts,cb)=>{probes.push(opts);const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
+ assert.equal(api.install(L,env),true,'adapter installs');
+ if(foreignDecorator){const original=registry.bwa_online;function Other(){return original.apply(this,arguments);}Other.prototype=original.prototype;L.Component.add('bwa_online',Other);}
+ const c=new registry.bwa_online(active);
+ return {L,c,values,launched,requests,pending,probes,originalPending,handoffs,notices,leave:()=>active={component:'full'},groups};
 }
 test('initial selection applies preferred voice before rendering without launching on its own',()=>{
  const h=integration();h.c.requestStreams(false);assert.equal(h.launched.length,0);
@@ -150,4 +152,12 @@ test('late BWA playlist/preflight handoff is cancelled at the final player bound
  for(const stop of [h=>h.c.destroy(),h=>h.c.changeBalanser('videodb'),h=>h.leave()]){
   const h=integration({deferredHandoff:true});h.c.playEpisode(1,2);stop(h);h.handoffs.forEach(fn=>fn());assert.equal(h.launched.length,0);
  }
+});
+test('another component decorator cannot install a second automatic-selection layer',()=>{
+ const h=integration({foreignDecorator:true});h.c.requestStreams(false);assert.equal(h.probes.length,3);assert.equal(h.requests.length,1);
+});
+test('initial list recovers if a returned-player preference update invalidates the scan snapshot',()=>{
+ const h=integration({deferred:true});h.c.requestStreams(false);h.values.bwa_lastvoice={1396:{src:'veoveo',voice:'LostFilm'}};
+ while(h.pending.length)h.pending.shift()();
+ assert.equal(h.requests.length,1);assert.equal(h.launched.length,0);h.c.destroy();
 });

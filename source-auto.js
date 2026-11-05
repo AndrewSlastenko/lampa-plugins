@@ -78,9 +78,9 @@
   }};
  }
  function install(L,env){
-  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.0',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
+  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.1',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.0';env=env||{};var owners=[],permits=[];
+  L.__homeSourceAuto='0.1.1';env=env||{};var owners=[],permits=[];
   if(L.Player&&L.Player.listener&&L.Player.listener.follow)L.Player.listener.follow('create',function(event){
    var data=event&&event.data;if(!data||typeof data.url!=='string'||!data.episode)return;
    for(var i=permits.length-1;i>=0;i--){var p=permits[i];if(p.urls.indexOf(data.url)>=0&&Number(data.season)===p.season&&Number(data.episode)===p.episode){if(!p.valid()&&event.abort)event.abort();break;}}
@@ -130,12 +130,13 @@
      if(!items.length){notice('Подходящий поток не найден. Выберите источник вручную');return;}
      L.Select.show({title:'Выбранной озвучки нет — выберите другую',items:items,onSelect:function(item){L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){L.Controller.toggle('content');}});
     }
-    function scan(season,episode,full,callback){
+    function scan(season,episode,full,callback,onChanged){
      cancel();var token=epoch,snapshot=fingerprint();
      if(c.loadingSkeleton)c.loadingSkeleton(full?'Проверяю все бесплатные источники…':'Проверяю источники и озвучки…');
      cancelScan=scanner.scan(movie,{season:season,episode:episode,full:full,preferred:full?null:preferred(),hidden:hidden()},function(result){
-      if(!valid(token)||snapshot!==fingerprint())return;
+      if(!valid(token))return;
       cancelScan=null;if(c.activity&&c.activity.loader)c.activity.loader(false);
+      if(snapshot!==fingerprint()){if(onChanged)onChanged();return;}
       callback(result);
      });
     }
@@ -143,7 +144,7 @@
     if(typeof request==='function'&&typeof change==='function')c.requestStreams=function(){
      if(internal||!first||manual||!enabled())return request.apply(this,arguments);
      first=false;var args=arguments,r=resume();
-     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {notice(result.needsChoice?'Сохранённая озвучка не найдена. Ручной выбор сохранён':'Автоподбор не нашёл поток. Доступен ручной выбор');request.apply(c,args);}});
+     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {notice(result.needsChoice?'Сохранённая озвучка не найдена. Ручной выбор сохранён':'Автоподбор не нашёл поток. Доступен ручной выбор');request.apply(c,args);}},function(){manual=true;request.call(c,true);});
     };
     ['changeBalanser','switchSeason','pickVoice','destroy'].forEach(function(name){var fn=c[name];if(typeof fn==='function')c[name]=function(){if(!internal){cancel();if(name==='changeBalanser'||name==='pickVoice')manual=true;first=false;}if(name==='destroy')dead=true;return fn.apply(this,arguments);};});
     if(typeof playEpisode==='function')c.playEpisode=function(season,episode){
