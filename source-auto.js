@@ -78,9 +78,9 @@
   }};
  }
  function install(L,env){
-  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.1',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
+  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.2',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.1';env=env||{};var owners=[],permits=[];
+  L.__homeSourceAuto='0.1.2';env=env||{};var owners=[],permits=[];
   if(L.Player&&L.Player.listener&&L.Player.listener.follow)L.Player.listener.follow('create',function(event){
    var data=event&&event.data;if(!data||typeof data.url!=='string'||!data.episode)return;
    for(var i=permits.length-1;i>=0;i--){var p=permits[i];if(p.urls.indexOf(data.url)>=0&&Number(data.season)===p.season&&Number(data.episode)===p.episode){if(!p.valid()&&event.abort)event.abort();break;}}
@@ -130,9 +130,10 @@
      if(!items.length){notice('Подходящий поток не найден. Выберите источник вручную');return;}
      L.Select.show({title:'Выбранной озвучки нет — выберите другую',items:items,onSelect:function(item){L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){L.Controller.toggle('content');}});
     }
-    function scan(season,episode,full,callback,onChanged){
+    function scan(season,episode,full,callback,onChanged,keepList){
      cancel();var token=epoch,snapshot=fingerprint();
-     if(c.loadingSkeleton)c.loadingSkeleton(full?'Проверяю все бесплатные источники…':'Проверяю источники и озвучки…');
+     if(keepList){if(c.activity&&c.activity.loader)c.activity.loader(true);}
+     else if(c.loadingSkeleton)c.loadingSkeleton(full?'Проверяю все бесплатные источники…':'Проверяю источники и озвучки…');
      cancelScan=scanner.scan(movie,{season:season,episode:episode,full:full,preferred:full?null:preferred(),hidden:hidden()},function(result){
       if(!valid(token))return;
       cancelScan=null;if(c.activity&&c.activity.loader)c.activity.loader(false);
@@ -160,7 +161,7 @@
        c.playGroupEpisode(group,season,episode,[group]);
       }
       if(result.best)launch(result.best);else if(result.needsChoice)alternatives(result,launch);else notice('Серия не найдена в проверенных источниках. Выберите источник или запустите полный поиск');
-     });
+     },null,true);
     };
     if(typeof playGroup==='function')c.playGroupEpisode=function(group,season,episode,groups){
      if(dead||L.Activity.active()!==object)return;
@@ -182,7 +183,7 @@
      cancel();
        var originalSelect=options.onSelect;
        return Object.assign({},options,{items:[{title:'Подобрать источник и озвучку',homeAuto:true},{title:'Полный поиск по бесплатным источникам',homeAutoFull:true}].concat(options.items),onSelect:function(item){
-        if(item.homeAuto||item.homeAutoFull){L.Select.close();manual=false;var r=resume();scan(r.season,r.episode,!!item.homeAutoFull,function(result){if(result.best)adopt(result.best,true);else if(result.needsChoice)alternatives(result,function(best){adopt(best,true);});else notice('Подходящий поток не найден. Доступен ручной выбор');});}
+        if(item.homeAuto||item.homeAutoFull){L.Select.close();manual=false;var r=resume();scan(r.season,r.episode,!!item.homeAutoFull,function(result){if(result.best)adopt(result.best,true);else if(result.needsChoice)alternatives(result,function(best){adopt(best,true);});else notice('Подходящий поток не найден. Доступен ручной выбор');},null,true);}
         else {manual=true;first=false;return originalSelect&&originalSelect.apply(this,arguments);}
        }});
     }

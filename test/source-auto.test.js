@@ -69,11 +69,11 @@ function integration({deferred=false,deferredOriginal=false,deferredHandoff=fals
  const registry={};
  registry.bwa_online=function(object){
   let source=values.bwa_title_src?.[1396]||'veoveo',selected='LostFilm';
-  this.activity={loader:()=>{}};this.loadingSkeleton=()=>{};this.isSerial=()=>serial;
+  this.list=['episode1','episode2'];this.activity={loader:()=>{}};this.loadingSkeleton=()=>{this.list=[];};this.isSerial=()=>serial;
   this.buildFilters=()=>{};this.drawMovie=()=>{};
   this.pickVoice=()=>L.Select.show({title:'Озвучка',items:groups.map((g,index)=>({title:g.voice,index})),onSelect:r=>{selected=groups[r.index].voice;values.bwa_lastvoice={1396:{src:source,voice:selected}};this.buildFilters();}});
   this.pickSource=()=>L.Select.show({title:'Источник',items:[{title:'VeoVeo',source:'veoveo'}],onSelect:()=>{}});
-  this.requestStreams=()=>{requests.push(source);this.buildFilters();};
+  this.requestStreams=()=>{requests.push(source);this.list=['episode1','episode2'];this.buildFilters();};
   this.changeBalanser=s=>{values.bwa_title_src={...values.bwa_title_src,1396:s};if(s!==source){source=s;this.requestStreams(true);}};
   this.switchSeason=()=>{};this.destroy=()=>{};
   this.playEpisode=(s,e)=>{const finish=()=>{this.buildFilters();this.playGroupEpisode(flat(groups.find(g=>g.voice===selected)||groups[0]),s,e,groups.map(flat));};if(deferredOriginal)originalPending.push(finish);else finish();};
@@ -160,4 +160,7 @@ test('initial list recovers if a returned-player preference update invalidates t
  const h=integration({deferred:true});h.c.requestStreams(false);h.values.bwa_lastvoice={1396:{src:'veoveo',voice:'LostFilm'}};
  while(h.pending.length)h.pending.shift()();
  assert.equal(h.requests.length,1);assert.equal(h.launched.length,0);h.c.destroy();
+});
+test('playing or rescanning an episode keeps the episode list available on return',()=>{
+ const h=integration();h.c.playEpisode(1,2);assert.deepEqual(h.c.list,['episode1','episode2']);
 });
