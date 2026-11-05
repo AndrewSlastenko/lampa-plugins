@@ -168,6 +168,14 @@
     var finished=percent===100&&time===0&&duration===0;
     if(!finished&&time===0&&duration===0)return;
     returned=true;
+    if(session.state.kind==='bwa_online'&&L.Storage&&typeof L.Storage.set==='function'){
+     var movie=session.activity.movie;
+     if(movie&&movie.id){
+      [['bwa_resume',{season:meta.season,episode:meta.episode}],['bwa_lastvoice',{src:meta.provider,voice:meta.voice}],['bwa_title_src',meta.provider]].forEach(function(entry){
+       var all=Object.assign({},L.Storage.get(entry[0],{})||{});all[movie.id]=entry[1];L.Storage.set(entry[0],all);
+      });
+     }
+    }
     if(finished){time=Number(road.duration||0);duration=time;}
     if(typeof original.handler==='function')original.handler(finished?100:percent,time,duration);
     else L.Timeline.update({hash:original.hash,percent:finished?100:percent,time:time,duration:duration});

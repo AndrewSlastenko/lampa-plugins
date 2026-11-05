@@ -157,6 +157,14 @@ test('BWA immutable string next playlist uses guarded native completion and pres
  assert.deepEqual(s.opened[1].data.headers,{X:'keep'});assert.equal(progress[0][0],100);
  assert.equal(s.rows[s.opened[0].data.timeline.hash],undefined);s.result(s.opened[0]);assert.equal(s.opened.length,2);
 });
+
+test('BWA native return after auto-next saves actual episode and voice without erasing other titles',()=>{
+ const s=bwaSetup();s.L.Storage.set=(key,value)=>s.values[key]=value;
+ s.values.bwa_resume={99:{season:3,episode:8}};s.start();s.result(s.opened[0]);
+ s.result(s.opened[1],{time:120,duration:3501,percent:3});
+ assert.deepEqual(s.values.bwa_resume[1396],{season:1,episode:2});assert.deepEqual(s.values.bwa_resume[99],{season:3,episode:8});
+ assert.deepEqual(s.values.bwa_lastvoice[1396],{src:'veoveo',voice:'LostFilm'});assert.equal(s.values.bwa_title_src[1396],'veoveo');
+});
 test('BWA Back, owner refresh, provider/voice/season change and stale results cannot advance',()=>{
  for(const invalidate of [s=>s.c.buildFilters(),s=>s.c.changeBalanser('other'),s=>s.c.switchSeason(2),s=>s.c.destroy(),s=>s.setActivity({component:'full'})]){
   const s=bwaSetup();s.start();invalidate(s);s.result(s.opened[0]);assert.equal(s.opened.length,1);

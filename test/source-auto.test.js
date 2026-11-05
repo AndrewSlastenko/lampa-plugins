@@ -61,3 +61,65 @@ test('timeout completes once, cancellation suppresses late callbacks and malform
  h.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});assert.equal(count,1);cancel();
  const j=harness({veoveo:'timeout'});let late=0;const stop=j.scanner.scan(j.movie,{},()=>late++);stop();j.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});j.tick(15000);assert.equal(late,0);
 });
+
+function integration({deferred=false,stored={},serial=true}={}){
+ let active={component:'bwa_online',movie:{id:1396,source:'tmdb',...(serial?{name:'Breaking Bad',original_name:'Breaking Bad'}:{title:'Film'})}};
+ const values={...stored},launched=[],requests=[],pending=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
+ const flat=g=>({...g,qualities:Object.fromEntries(Object.entries(g.qualities).map(([q,v])=>[q,v.url]))});
+ const registry={};
+ registry.bwa_online=function(object){
+  let source=values.bwa_title_src?.[1396]||'veoveo',selected='LostFilm';
+  this.activity={loader:()=>{}};this.loadingSkeleton=()=>{};this.isSerial=()=>serial;
+  this.buildFilters=()=>{};this.drawMovie=()=>{};
+  this.pickVoice=()=>L.Select.show({title:'Озвучка',items:groups.map((g,index)=>({title:g.voice,index})),onSelect:r=>{selected=groups[r.index].voice;values.bwa_lastvoice={1396:{src:source,voice:selected}};this.buildFilters();}});
+  this.pickSource=()=>L.Select.show({title:'Источник',items:[],onSelect:()=>{}});
+  this.requestStreams=()=>{requests.push(source);this.buildFilters();};
+  this.changeBalanser=s=>{values.bwa_title_src={...values.bwa_title_src,1396:s};if(s!==source){source=s;this.requestStreams(true);}};
+  this.switchSeason=()=>{};this.destroy=()=>{};
+  this.playEpisode=(s,e)=>{this.buildFilters();this.playGroupEpisode(flat(groups.find(g=>g.voice===selected)||groups[0]),s,e,groups.map(flat));};
+  this.playGroupEpisode=(group,s,e)=>launched.push({source,group,s,e});this.play=g=>launched.push({source,group:g});
+ };
+ const L={Component:{get:k=>registry[k],add:(k,v)=>registry[k]=v},Activity:{active:()=>active},
+ Storage:{get:(k,f)=>values[k]===undefined?f:values[k],set:(k,v)=>values[k]=v},Noty:{show:t=>notices.push(t)},
+ Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}}};
+ const env={BWA_API:{resolve:(m,opts,cb)=>{const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
+ assert.equal(api.install(L,env),true,'adapter installs');const c=new registry.bwa_online(active);
+ return {L,c,values,launched,requests,pending,notices,leave:()=>active={component:'full'},groups};
+}
+test('initial selection applies preferred voice before rendering without launching on its own',()=>{
+ const h=integration();h.c.requestStreams(false);assert.equal(h.launched.length,0);
+ assert.equal(h.values.bwa_lastvoice[1396].voice,'TVShows');assert.equal(h.requests[0],'hdvb');
+});
+test('episode play checks requested coordinates and enforces chosen voice and quality in original launch',()=>{
+ const h=integration();h.c.playEpisode(2,5);
+ assert.equal(h.launched.length,1);assert.equal(h.launched[0].source,'hdvb');assert.equal(h.launched[0].group.voice,'TVShows');
+ assert.deepEqual(Object.keys(h.launched[0].group.qualities),['1080p']);assert.equal(h.launched[0].s,2);assert.equal(h.launched[0].e,5);
+});
+test('manual source/voice selection and activity departure cancel deferred work',()=>{
+ for(const action of [h=>h.c.changeBalanser('videodb'),h=>h.c.pickVoice(),h=>h.c.switchSeason(3),h=>h.c.destroy(),h=>h.leave()]){
+  const h=integration({deferred:true});h.c.playEpisode(1,1);action(h);h.pending.splice(0).forEach(fn=>fn());assert.equal(h.launched.length,0);
+ }
+});
+test('missing saved voice offers manual recovery and never starts an alternative automatically',()=>{
+ const h=integration({stored:{bwa_title_src:{1396:'veoveo'},bwa_lastvoice:{1396:{src:'veoveo',voice:'AlexFilm'}}}});h.c.playEpisode(1,5);
+ assert.equal(h.launched.length,0);assert.ok(h.L.lastMenu.items.length);assert.match(h.L.lastMenu.title,/озвучк/i);
+});
+test('disabled selection and missing BWA API preserve normal manual playback',()=>{
+ const h=integration({stored:{source_auto_enabled:false}});h.c.playEpisode(1,2);assert.equal(h.launched[0].group.voice,'LostFilm');
+});
+test('source menu exposes full rescan and manual movie voice remains selected',()=>{
+ const h=integration({serial:false});h.c.pickSource();assert.ok(h.L.lastMenu.items.some(x=>x.homeAutoFull));
+ h.c.play({...h.groups[0],qualities:{'4K':'https://cdn/4k','1080p':'https://cdn/fhd'}});
+ assert.equal(h.launched[0].group.voice,'LostFilm');assert.deepEqual(Object.keys(h.launched[0].group.qualities),['4K']);
+});
+
+test('manual source stays selected on the next episode instead of reopening the previous source',()=>{
+ const h=integration({stored:{bwa_title_src:{1396:'veoveo'},bwa_lastvoice:{1396:{src:'veoveo',voice:'LostFilm'}}}});
+ h.c.changeBalanser('videodb');h.c.playEpisode(1,2);assert.equal(h.launched[0].source,'videodb');
+});
+test('empty scans are retried and changing saved provider does not reuse a partial cached scan',()=>{
+ const h=harness({veoveo:[]});h.scanner.scan(h.movie,{},()=>{});const n=h.calls.length;h.scanner.scan(h.movie,{},()=>{});assert.ok(h.calls.length>n);
+ const j=harness({veoveo:[voice('LostFilm')],hdvb:[voice('TVShows')]});let out;
+ j.scanner.scan(j.movie,{preferred:{source:'veoveo',voice:'LostFilm'}},()=>{});
+ j.scanner.scan(j.movie,{preferred:{source:'hdvb',voice:'TVShows'}},r=>out=r);assert.equal(out.best.source,'hdvb');
+});
