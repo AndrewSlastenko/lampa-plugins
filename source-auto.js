@@ -2,7 +2,7 @@
 (function(root,factory){
  'use strict';var api=factory();
  if(typeof module==='object'&&module.exports)module.exports=api;
- else if(root.Lampa)api.install(root.Lampa,root);
+ else if(root.Lampa&&root.Lampa.Component)api.install(root.Lampa,root);
 }(typeof window!=='undefined'?window:this,function(){
  'use strict';
  function voiceTier(value){
