@@ -39,8 +39,8 @@
  function createScanner(env){
   var later=env.setTimeout||setTimeout,clear=env.clearTimeout||clearTimeout,now=env.now||Date.now,cache={};
   return {scan:function(movie,opts,callback){
-   opts=opts||{};var cancelled=false,finished=false,sourceTimer,deadline,rows=[],asked={},catalog=[],meta={},count=0;
-   var key=movieKey(movie)+':'+(opts.season||0)+':'+(opts.episode||0)+':'+(opts.preferred?opts.preferred.source:''),max=opts.full?30:3;
+   opts=opts||{};var cancelled=false,finished=false,sourceTimer,deadline,rows=[],asked={},catalog=[{id:'veoveo'},{id:'hdvb'},{id:'collaps'}],meta={},count=0;
+   var key=movieKey(movie)+':'+(opts.season||0)+':'+(opts.episode||0)+':'+(opts.preferred?opts.preferred.source:'')+':'+(opts.hidden||[]).slice().sort().join(','),max=opts.full?30:3;
    function stop(){cancelled=true;clear(sourceTimer);clear(deadline);}
    function finish(){
     if(cancelled||finished)return;finished=true;clear(sourceTimer);clear(deadline);
@@ -55,7 +55,8 @@
     if(cancelled||finished)return;
     if(opts.preferred&&choose(rows,opts.preferred))return finish();
     if(count>=max)return finish();
-    var available=catalog.filter(function(s){return s&&allowed(s.id)&&!asked[s.id];});
+    var priority=['veoveo','hdvb','collaps','videodb'];
+    var available=catalog.filter(function(s){return s&&allowed(s.id)&&!asked[s.id];}).sort(function(a,b){var x=priority.indexOf(a.id),y=priority.indexOf(b.id);return (x<0?99:x)-(y<0?99:y);});
     if(!available.length)return finish();query(available[0].id);
    }
    function query(source){
@@ -72,13 +73,14 @@
     try{env.resolve(movie,{source:source,season:opts.season,episode:opts.episode},done);}catch(error){done(error);}
    }
    var seed=opts.preferred&&opts.preferred.source||'veoveo';
-   if(opts.hidden&&opts.hidden.indexOf(seed)>=0)seed='videodb';
+   if(opts.hidden&&opts.hidden.indexOf(seed)>=0){var visible=catalog.filter(function(s){return opts.hidden.indexOf(s.id)<0;});if(!visible.length){finish();return stop;}seed=visible[0].id;}
    query(seed);return stop;
   }};
  }
  function install(L,env){
+  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.0',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.0';env=env||{};
+  L.__homeSourceAuto='0.1.0';env=env||{};var owners=[];
   var scanner=createScanner({resolve:function(movie,opts,cb){if(!env.BWA_API||typeof env.BWA_API.resolve!=='function')return cb(new Error('BWA API unavailable'));env.BWA_API.resolve(movie,opts,cb);},setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,now:env.now});
   function enabled(){return L.Storage.get('source_auto_enabled',true)!==false&&env.BWA_API&&typeof env.BWA_API.resolve==='function';}
   function notice(text){if(L.Noty)L.Noty.show(text);}
@@ -106,7 +108,10 @@
      try{internal=true;pickVoice.call(c);}finally{internal=false;selecting=false;L.Select.show=show;}
      return matched;
     }
-    if(typeof filters==='function')c.buildFilters=function(){var out=filters.apply(this,arguments);if(desired&&!selecting)selectVoice();return out;};
+    if(typeof filters==='function')c.buildFilters=function(){
+     if(desired&&!internal&&!selecting){var saved=preferred();if(saved&&(saved.source!==desired.source||saved.voice!==desired.voice)){cancel();manual=true;}}
+     var out=filters.apply(this,arguments);if(desired&&!selecting)selectVoice();return out;
+    };
     function adopt(best,load){
      desired=best;var wrappedRequest=c.requestStreams;
      internal=true;c.requestStreams=function(){};
@@ -140,11 +145,20 @@
     if(typeof playEpisode==='function')c.playEpisode=function(season,episode){
      if(!enabled()||manual)return playEpisode.apply(this,arguments);
      scan(season,episode,false,function(result){
-      function launch(best){adopt(best,false);playingChoice=best;playEpisode.call(c,season,episode);}
+      var token=epoch;
+      function launch(best){
+       if(!valid(token))return;adopt(best,false);playingChoice=best;
+       // API.resolve already fetched this exact episode. Reuse it instead of
+       // starting upstream's second asynchronous fetch after the cancellation gate.
+       var group=Object.assign({},best.group,{qualities:{},order:[best.quality]}),stream=best.group.qualities[best.quality];
+       group.qualities[best.quality]=typeof stream==='string'?stream:stream.url;
+       c.playGroupEpisode(group,season,episode,[group]);
+      }
       if(result.best)launch(result.best);else if(result.needsChoice)alternatives(result,launch);else notice('Серия не найдена в проверенных источниках. Выберите источник или запустите полный поиск');
      });
     };
     if(typeof playGroup==='function')c.playGroupEpisode=function(group,season,episode,groups){
+     if(dead||L.Activity.active()!==object)return;
      var wanted=playingChoice;playingChoice=null;
      if(wanted){group=(groups||[group]).filter(function(g){return g.voice===wanted.voice;})[0];if(!group){notice('Озвучка стала недоступна. Выберите другую вручную');return;}}
      var list=candidates({source:wanted?wanted.source:'manual',voices:[group]}),best=choose(list);
@@ -156,24 +170,26 @@
      if(enabled()&&best){group=Object.assign({},group,{order:[best.quality],qualities:{}});group.qualities[best.quality]=best.group.qualities[best.quality];}
      return play.call(this,group);
     };
-    var sourceMenu=c.pickSource;
-    if(typeof sourceMenu==='function')c.pickSource=function(){
-     cancel();var show=L.Select.show;
-     L.Select.show=function(options){
-      if(options&&Array.isArray(options.items)){
+    function sourceOptions(options){
+     cancel();
        var originalSelect=options.onSelect;
-       options=Object.assign({},options,{items:[{title:'Подобрать источник и озвучку',homeAuto:true},{title:'Полный поиск по бесплатным источникам',homeAutoFull:true}].concat(options.items),onSelect:function(item){
+       return Object.assign({},options,{items:[{title:'Подобрать источник и озвучку',homeAuto:true},{title:'Полный поиск по бесплатным источникам',homeAutoFull:true}].concat(options.items),onSelect:function(item){
         if(item.homeAuto||item.homeAutoFull){L.Select.close();manual=false;var r=resume();scan(r.season,r.episode,!!item.homeAutoFull,function(result){if(result.best)adopt(result.best,true);else if(result.needsChoice)alternatives(result,function(best){adopt(best,true);});else notice('Подходящий поток не найден. Доступен ручной выбор');});}
         else {manual=true;first=false;return originalSelect&&originalSelect.apply(this,arguments);}
        }});
-      }return show.call(this,options);
-     };
-     try{return sourceMenu.apply(this,arguments);}finally{L.Select.show=show;}
-    };
+    }
+    owners.push({object:object,menu:sourceOptions});if(owners.length>10)owners.shift();
     return c;
    }
    Wrapped.prototype=Original.prototype;Wrapped.__homeSourceAuto=true;return Wrapped;
   }
+  var selectShow=L.Select.show;
+  L.Select.show=function(options){
+   if(options&&Array.isArray(options.items)&&options.items.some(function(item){return typeof item.source==='string';})&&options.items.every(function(item){return typeof item.source==='string'||item.wish;})){
+    var active=L.Activity.active();for(var i=owners.length-1;i>=0;i--)if(owners[i].object===active){options=owners[i].menu(options);break;}
+   }
+   return selectShow.call(this,options);
+  };
   var add=L.Component.add;L.Component.add=function(name,component){return add.call(this,name,name==='bwa_online'?decorate(component):component);};
   var existing=L.Component.get('bwa_online');if(existing)L.Component.add('bwa_online',existing);
   if(L.SettingsApi&&L.SettingsApi.addParam)L.SettingsApi.addParam({component:'player',param:{name:'source_auto_enabled',type:'trigger',default:true},field:{name:'Автовыбор источника BWA',description:'Сначала привычная озвучка, затем разрешение. Ручной выбор сохраняется'}});

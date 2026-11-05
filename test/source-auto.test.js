@@ -62,9 +62,9 @@ test('timeout completes once, cancellation suppresses late callbacks and malform
  const j=harness({veoveo:'timeout'});let late=0;const stop=j.scanner.scan(j.movie,{},()=>late++);stop();j.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});j.tick(15000);assert.equal(late,0);
 });
 
-function integration({deferred=false,stored={},serial=true}={}){
+function integration({deferred=false,deferredOriginal=false,stored={},serial=true}={}){
  let active={component:'bwa_online',movie:{id:1396,source:'tmdb',...(serial?{name:'Breaking Bad',original_name:'Breaking Bad'}:{title:'Film'})}};
- const values={...stored},launched=[],requests=[],pending=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
+ const values={...stored},launched=[],requests=[],pending=[],originalPending=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
  const flat=g=>({...g,qualities:Object.fromEntries(Object.entries(g.qualities).map(([q,v])=>[q,v.url]))});
  const registry={};
  registry.bwa_online=function(object){
@@ -72,11 +72,12 @@ function integration({deferred=false,stored={},serial=true}={}){
   this.activity={loader:()=>{}};this.loadingSkeleton=()=>{};this.isSerial=()=>serial;
   this.buildFilters=()=>{};this.drawMovie=()=>{};
   this.pickVoice=()=>L.Select.show({title:'Озвучка',items:groups.map((g,index)=>({title:g.voice,index})),onSelect:r=>{selected=groups[r.index].voice;values.bwa_lastvoice={1396:{src:source,voice:selected}};this.buildFilters();}});
-  this.pickSource=()=>L.Select.show({title:'Источник',items:[],onSelect:()=>{}});
+  this.pickSource=()=>L.Select.show({title:'Источник',items:[{title:'VeoVeo',source:'veoveo'}],onSelect:()=>{}});
   this.requestStreams=()=>{requests.push(source);this.buildFilters();};
   this.changeBalanser=s=>{values.bwa_title_src={...values.bwa_title_src,1396:s};if(s!==source){source=s;this.requestStreams(true);}};
   this.switchSeason=()=>{};this.destroy=()=>{};
-  this.playEpisode=(s,e)=>{this.buildFilters();this.playGroupEpisode(flat(groups.find(g=>g.voice===selected)||groups[0]),s,e,groups.map(flat));};
+  this.playEpisode=(s,e)=>{const finish=()=>{this.buildFilters();this.playGroupEpisode(flat(groups.find(g=>g.voice===selected)||groups[0]),s,e,groups.map(flat));};if(deferredOriginal)originalPending.push(finish);else finish();};
+  this.filterVoice=v=>{selected=v;values.bwa_lastvoice={1396:{src:source,voice:v}};this.buildFilters();};
   this.playGroupEpisode=(group,s,e)=>launched.push({source,group,s,e});this.play=g=>launched.push({source,group:g});
  };
  const L={Component:{get:k=>registry[k],add:(k,v)=>registry[k]=v},Activity:{active:()=>active},
@@ -84,7 +85,7 @@ function integration({deferred=false,stored={},serial=true}={}){
  Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}}};
  const env={BWA_API:{resolve:(m,opts,cb)=>{const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
  assert.equal(api.install(L,env),true,'adapter installs');const c=new registry.bwa_online(active);
- return {L,c,values,launched,requests,pending,notices,leave:()=>active={component:'full'},groups};
+ return {L,c,values,launched,requests,pending,originalPending,notices,leave:()=>active={component:'full'},groups};
 }
 test('initial selection applies preferred voice before rendering without launching on its own',()=>{
  const h=integration();h.c.requestStreams(false);assert.equal(h.launched.length,0);
@@ -93,11 +94,11 @@ test('initial selection applies preferred voice before rendering without launchi
 test('episode play checks requested coordinates and enforces chosen voice and quality in original launch',()=>{
  const h=integration();h.c.playEpisode(2,5);
  assert.equal(h.launched.length,1);assert.equal(h.launched[0].source,'hdvb');assert.equal(h.launched[0].group.voice,'TVShows');
- assert.deepEqual(Object.keys(h.launched[0].group.qualities),['1080p']);assert.equal(h.launched[0].s,2);assert.equal(h.launched[0].e,5);
+ assert.deepEqual(Object.keys(h.launched[0].group.qualities),['4K']);assert.equal(h.launched[0].s,2);assert.equal(h.launched[0].e,5);
 });
 test('manual source/voice selection and activity departure cancel deferred work',()=>{
  for(const action of [h=>h.c.changeBalanser('videodb'),h=>h.c.pickVoice(),h=>h.c.switchSeason(3),h=>h.c.destroy(),h=>h.leave()]){
-  const h=integration({deferred:true});h.c.playEpisode(1,1);action(h);h.pending.splice(0).forEach(fn=>fn());assert.equal(h.launched.length,0);
+  const h=integration({deferred:true});h.c.playEpisode(1,1);action(h);h.pending.splice(0).forEach(fn=>fn());assert.equal(h.launched.length,0);h.c.destroy();
  }
 });
 test('missing saved voice offers manual recovery and never starts an alternative automatically',()=>{
@@ -122,4 +123,26 @@ test('empty scans are retried and changing saved provider does not reuse a parti
  const j=harness({veoveo:[voice('LostFilm')],hdvb:[voice('TVShows')]});let out;
  j.scanner.scan(j.movie,{preferred:{source:'veoveo',voice:'LostFilm'}},()=>{});
  j.scanner.scan(j.movie,{preferred:{source:'hdvb',voice:'TVShows'}},r=>out=r);assert.equal(out.best.source,'hdvb');
+});
+
+test('automatic launch uses the resolved episode instead of issuing an unguarded second fetch',()=>{
+ const h=integration({deferredOriginal:true});h.c.playEpisode(1,2);
+ assert.equal(h.originalPending.length,0);assert.equal(h.launched.length,1);
+ h.c.destroy();h.originalPending.forEach(fn=>fn());assert.equal(h.launched.length,1);
+});
+test('standard Lampa voice filter can override auto selection without reverting',()=>{
+ const h=integration();h.c.requestStreams(false);h.c.filterVoice('LostFilm');
+ assert.equal(h.values.bwa_lastvoice[1396].voice,'LostFilm');h.c.playEpisode(1,2);assert.equal(h.launched[0].group.voice,'LostFilm');
+});
+test('hiding a provider invalidates its cached candidate before selection',()=>{
+ const h=harness({veoveo:[voice('TVShows')]});h.scanner.scan(h.movie,{},()=>{});let result;
+ h.scanner.scan(h.movie,{hidden:['veoveo']},r=>result=r);assert.notEqual(result.best?.source,'veoveo');
+});
+test('a seed timeout still tries other free providers within the overall deadline',()=>{
+ const h=harness({veoveo:'timeout',hdvb:[voice('TVShows')]});let result;
+ h.scanner.scan(h.movie,{},r=>result=r);h.tick(5000);assert.equal(result?.best?.source,'hdvb');
+});
+test('standard Lampa source filter also exposes full rescan',()=>{
+ const h=integration();h.L.Select.show({title:'Источник',items:[{title:'VeoVeo',source:'veoveo'}],onSelect:()=>{}});
+ assert.ok(h.L.lastMenu.items.some(x=>x.homeAutoFull));
 });
