@@ -30,7 +30,10 @@
    var parts=path.split(/[\\/]/),seasons=[];
    parts.slice(0,-1).forEach(function(p){var m=/^(?:season|сезон|s)[ ._-]*(\d{1,3})$/i.exec(p);if(m)seasons.push(Number(m[1]));});
    var episodes=[],epMatch,epPattern=/(?:^|[^a-z0-9])(?:episode|ep|e|серия)[ ._-]*(\d{1,5})(?!\d)/gi;
-   while((epMatch=epPattern.exec(parts[parts.length-1])))episodes.push(Number(epMatch[1]));
+   while((epMatch=epPattern.exec(parts[parts.length-1]))){
+    if(/^[ ._]*[-+][ ._]*\d/.test(parts[parts.length-1].slice(epPattern.lastIndex)))return null;
+    episodes.push(Number(epMatch[1]));
+   }
    if(seasons.length===1&&episodes.length===1)found.push([seasons[0],episodes[0]]);
   }
   if(found.length!==1||found[0][0]!==Number(item.season)||found[0][1]!==Number(item.episode))return null;

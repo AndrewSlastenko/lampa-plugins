@@ -119,7 +119,7 @@ test('raw season folder plus explicit episode token is accepted without reading 
 });
 
 test('season folder never selects a second token from a multi-episode file',()=>{
- for(const [path,episode] of [['Season 1/E01-E02.mkv',2],['Season 1/E01 and E02.mkv',1],['Season 1/Show.S01E01-E02.mkv',2]]){
+ for(const [path,episode] of [['Season 1/E01-E02.mkv',2],['Season 1/E01 and E02.mkv',1],['Season 1/Show.S01E01-E02.mkv',2],['Season 1/E01-02.mkv',1],['Season 1/E01+02.mkv',1]]){
   const s=setup(),a={url:'http://box/stream',path,season:1,episode,torrent_hash:'abc',card:{id:1396,original_name:'Show'}};
   s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url,path);
  }
