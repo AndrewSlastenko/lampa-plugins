@@ -21,6 +21,7 @@
   var path=item.path,found=[],match;
   var re=/(?:^|[^a-z0-9])s(\d{1,3})[ ._-]*e(\d{1,5})(?!\d)(?![ ._-]*e\d|[-+]\d)/gi;
   while((match=re.exec(path)))found.push([Number(match[1]),Number(match[2])]);
+  if(!found.length&&/(?:^|[^a-z0-9])s[0-9]{1,3}[ ._-]*e[0-9]/i.test(path))return null;
   if(!found.length){
    re=/(?:^|[^a-z0-9])(\d{1,3})x(\d{1,5})(?!\d)(?![ ._-]*x\d|[-+]\d)/gi;
    while((match=re.exec(path)))found.push([Number(match[1]),Number(match[2])]);
@@ -28,8 +29,9 @@
   if(!found.length){
    var parts=path.split(/[\\/]/),seasons=[];
    parts.slice(0,-1).forEach(function(p){var m=/^(?:season|сезон|s)[ ._-]*(\d{1,3})$/i.exec(p);if(m)seasons.push(Number(m[1]));});
-   var e=/(?:^|[^a-z0-9])(?:episode|ep|e|серия)[ ._-]*(\d{1,5})(?!\d)(?![ ._-]*e\d|[-+]\d)/i.exec(parts[parts.length-1]);
-   if(seasons.length===1&&e)found.push([seasons[0],Number(e[1])]);
+   var episodes=[],epMatch,epPattern=/(?:^|[^a-z0-9])(?:episode|ep|e|серия)[ ._-]*(\d{1,5})(?!\d)/gi;
+   while((epMatch=epPattern.exec(parts[parts.length-1])))episodes.push(Number(epMatch[1]));
+   if(seasons.length===1&&episodes.length===1)found.push([seasons[0],episodes[0]]);
   }
   if(found.length!==1||found[0][0]!==Number(item.season)||found[0][1]!==Number(item.episode))return null;
   return {id:id,season:found[0][0],episode:found[0][1]};

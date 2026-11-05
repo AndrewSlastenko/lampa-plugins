@@ -117,3 +117,10 @@ test('raw season folder plus explicit episode token is accepted without reading 
  const s=setup(),a={url:'http://box/stream#keep=1',path:'Season 2/E03.mkv',season:2,episode:3,torrent_hash:'abc',card:{id:1396,original_name:'Show'},title:'Misleading S99E99'};
  s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url+'&homeafr_series=tmdb:1396:2:3:3');
 });
+
+test('season folder never selects a second token from a multi-episode file',()=>{
+ for(const [path,episode] of [['Season 1/E01-E02.mkv',2],['Season 1/E01 and E02.mkv',1],['Season 1/Show.S01E01-E02.mkv',2]]){
+  const s=setup(),a={url:'http://box/stream',path,season:1,episode,torrent_hash:'abc',card:{id:1396,original_name:'Show'}};
+  s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url,path);
+ }
+});
