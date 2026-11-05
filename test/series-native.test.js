@@ -138,3 +138,74 @@ test('structured native payload uses its own card and does not infer episodes fr
  assert.match(s.opened[0].url,/homeafr_series=tmdb:1396:1:1:3/);
  const b={url:'https://cdn/unknown',card:{id:1396,original_name:'X'},title:'S01E01'};s.L.Android.openPlayer(b.url,b);assert.equal(s.opened[1].url,b.url);
 });
+
+function bwaSetup({raw='LostFilm',voice='LostFilm',routes}={}) {
+ const s=setup(),activity={component:'bwa_online',movie:{id:1396,source:'tmdb',original_name:'Breaking Bad'}};
+ s.setActivity(activity);
+ s.L.Component.add('bwa_online',function(){
+  this.buildFilters=function(){};this.changeBalanser=function(){};this.switchSeason=function(){};this.destroy=function(){};
+  this.extNextPlaylist=function(season,episode,group,q,current,callback){callback((typeof routes==='function'?routes(current):routes)||[current,{url:'https://bwa.ad/next/veoveo?id=1396&tmdb_id=1396&season=1&episode=2&voice='+encodeURIComponent(group.raw)+'&q=1080',season:1,episode:2,timeline:{hash:702},headers:{X:'keep'},subtitles:[{url:'https://sub'}]}]);};
+ });
+ const c=new (s.registry.bwa_online)(activity),a={url:'https://cdn/first',season:1,episode:1,timeline:{hash:701}};
+ function start(){c.extNextPlaylist(1,1,{raw,voice},'1080',a,list=>s.start(a,list));}
+ return {...s,c,a,startNative:s.start,start};
+}
+test('BWA immutable string next playlist uses guarded native completion and preserves fields/progress',()=>{
+ const s=bwaSetup();let progress=[];s.a.timeline.handler=(...v)=>progress.push(v);s.start();
+ assert.match(s.opened[0].data.timeline.hash,/^home-series-launch:/);
+ s.result(s.opened[0]);assert.equal(s.opened.length,2);assert.match(s.opened[1].url,/homeafr_series=tmdb:1396:1:2:3/);
+ assert.deepEqual(s.opened[1].data.headers,{X:'keep'});assert.equal(progress[0][0],100);
+ assert.equal(s.rows[s.opened[0].data.timeline.hash],undefined);s.result(s.opened[0]);assert.equal(s.opened.length,2);
+});
+test('BWA Back, owner refresh, provider/voice/season change and stale results cannot advance',()=>{
+ for(const invalidate of [s=>s.c.buildFilters(),s=>s.c.changeBalanser('other'),s=>s.c.switchSeason(2),s=>s.c.destroy(),s=>s.setActivity({component:'full'})]){
+  const s=bwaSetup();s.start();invalidate(s);s.result(s.opened[0]);assert.equal(s.opened.length,1);
+ }
+ const s=bwaSetup();s.start();s.result(s.opened[0],{percent:100,time:3501,duration:3501});assert.equal(s.opened.length,1);
+});
+test('BWA rejects mutable lazy getters and mismatched voice/provider routes',()=>{
+ for(const entries of [
+  [{url:'https://bwa.ad/next/veoveo?voice=Other',season:1,episode:2,timeline:{hash:702}}],
+  [{url:'https://bwa.ad/next/veoveo?voice=LostFilm',season:1,episode:2,timeline:{hash:702}},{url:'https://bwa.ad/next/other?voice=LostFilm',season:1,episode:3,timeline:{hash:703}}],
+  [{url:()=>{throw Error('must not call')},season:1,episode:2,timeline:{hash:702}}]
+ ]){const s=bwaSetup({routes:current=>[current,...entries]});s.start();s.result(s.opened[0]);assert.equal(s.opened.length,1);
+ }
+});
+test('BWA toggles remain independent; Fovea single item is never given a guessed next',()=>{
+ const s=bwaSetup();s.values.series_native_skip=false;s.start();assert.equal(s.opened[0].url,s.a.url);s.result(s.opened[0]);assert.equal(s.opened.length,2);
+ const t=bwaSetup();t.values.series_native_next=false;t.start();t.result(t.opened[0]);assert.equal(t.opened.length,1);
+ const f=setup();f.setActivity({component:'bwa_online',movie:{id:1396,original_name:'X'}});const a={url:'https://fovea/one',season:1,episode:1,timeline:{hash:71}};f.start(a);f.result(f.opened[0]);assert.equal(f.opened.length,1);
+});
+
+test('BWA copied first payload is matched by original timeline and URL',()=>{
+ const s=bwaSetup();s.c.extNextPlaylist(1,1,{raw:'LostFilm',voice:'LostFilm'},'1080',s.a,list=>s.startNative({...s.a},list));
+ assert.match(s.opened[0].data.timeline.hash,/^home-series-launch:/);s.result(s.opened[0]);assert.equal(s.opened.length,2);
+});
+test('BWA mutation of retained next URL cannot change voice after capture',()=>{
+ const s=bwaSetup();s.c.extNextPlaylist(1,1,{raw:'LostFilm',voice:'LostFilm'},'1080',s.a,list=>{s.startNative(s.a,list);list[1].url='https://bwa.ad/next/veoveo?voice=Other';});
+ s.result(s.opened[0]);assert.equal(s.opened.length,1);
+});
+
+test('BWA rejects missing, empty, nonscalar and duplicate timeline hashes',()=>{
+ for(const hash of [undefined,'',{},true,701]){
+  const s=bwaSetup({routes:current=>[current,{url:'https://bwa.ad/next/veoveo?id=1396&tmdb_id=1396&season=1&episode=2&voice=LostFilm',season:1,episode:2,timeline:{hash}}]});s.start();assert.equal(s.opened[0].data.timeline.hash,701);s.result(s.opened[0]);assert.equal(s.opened.length,1);
+ }
+});
+test('BWA next route must identify its structured episode and captured show at capture and launch',()=>{
+ const good='https://bwa.ad/api/next/veoveo?id=1396&tmdb_id=1396&serial=1&season=1&episode=2&voice=LostFilm';
+ for(const bad of [good.replace('episode=2','episode=9'),good.replace('season=1','season=2'),good.replace('tmdb_id=1396','tmdb_id=999'),good+'&episode=2',good.replace('id=1396','id=999')]){
+  const s=bwaSetup({routes:current=>[current,{url:bad,season:1,episode:2,timeline:{hash:702}}]});s.start();assert.equal(s.opened[0].data.timeline.hash,701);s.result(s.opened[0]);assert.equal(s.opened.length,1);
+ }
+ const s=bwaSetup({routes:current=>[current,{url:good,season:1,episode:2,timeline:{hash:702}}]});let list;s.c.extNextPlaylist(1,1,{raw:'LostFilm',voice:'LostFilm'},'1080',s.a,p=>{list=p;s.startNative(s.a,p);});assert.match(s.opened[0].data.timeline.hash,/home-series-launch:/);list[1].url=good.replace('episode=2','episode=9');s.result(s.opened[0]);assert.equal(s.opened.length,1);
+});
+test('BWA rejects different show identity and origin/base across future routes',()=>{
+ for(const change of [u=>u.replace('imdb_id=tt0903747','imdb_id=tt1111111'),u=>u.replace('bwa.ad','other.test'),u=>u.replace('/next/','/other/next/')]){
+  const route=ep=>'https://bwa.ad/next/veoveo?id=1396&tmdb_id=1396&imdb_id=tt0903747&season=1&episode='+ep+'&voice=LostFilm';
+  const s=bwaSetup({routes:current=>[current,{url:route(2),season:1,episode:2,timeline:{hash:702}},{url:change(route(3)),season:1,episode:3,timeline:{hash:703}}]});s.start();assert.equal(s.opened[0].data.timeline.hash,701);s.result(s.opened[0]);assert.equal(s.opened.length,1);
+ }
+});
+test('BWA revalidates unique timeline identity after the playlist is captured',()=>{
+ const route=ep=>'https://bwa.ad/next/veoveo?id=1396&season=1&episode='+ep+'&voice=LostFilm';let list;
+ const s=bwaSetup({routes:current=>[current,{url:route(2),season:1,episode:2,timeline:{hash:702}},{url:route(3),season:1,episode:3,timeline:{hash:703}}]});
+ s.c.extNextPlaylist(1,1,{raw:'LostFilm',voice:'LostFilm'},'1080',s.a,p=>{list=p;s.startNative(s.a,p);});list[2].timeline.hash=702;s.result(s.opened[0]);assert.equal(s.opened.length,1);
+});
