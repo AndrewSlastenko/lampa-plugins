@@ -96,3 +96,24 @@ test('native correlation is ephemeral and old results never reach storage/sync',
  s.result(s.opened[0]);assert.equal(s.rows[hash],undefined);s.L.Timeline.update({hash,time:0,duration:0,percent:100});
  assert.equal(s.rows[hash],undefined);assert.equal(s.rows[101].percent,100);
 });
+
+test('torrent handoff annotates every explicit episode independently and preserves native playlist/preload',()=>{
+ const s=setup(),card={id:1396,source:'tmdb',original_name:'Breaking Bad'};
+ const a={url:'http://box:8090/stream?index=1',path:'Show.S01E01.1080p.mkv',season:1,episode:1,card,torrent_hash:'abc',timeline:{hash:22},headers:{X:'y'}};
+ const b={...a,url:'http://box:8090/stream?index=2',path:'Show.S01E02.mkv',episode:2,timeline:{hash:23}};
+ a.playlist=[a,b];s.L.Android.openPlayer(a.url,a);
+ const out=s.opened[0];assert.match(out.url,/homeafr_series=tmdb:1396:1:1:3/);
+ assert.match(out.data.playlist[1].url,/homeafr_series=tmdb:1396:1:2:3/);
+ assert.equal(out.data.timeline,a.timeline);assert.equal(out.data.torrent_hash,'abc');assert.deepEqual(out.data.headers,a.headers);
+ assert.equal(a.url,'http://box:8090/stream?index=1');assert.equal(out.data.playlist.length,2);
+});
+test('torrent ambiguity, parser mismatch, multi-episode files and films never acquire guessed timing',()=>{
+ for(const path of ['01.mkv','Show.1080p.mkv','Show.S02E01.mkv','Show.S01E01E02.mkv','Show.S01E01-E02.mkv']){
+  const s=setup(),a={url:'http://box/stream',path,season:1,episode:1,torrent_hash:'abc',card:{id:1396,original_name:'Show'}};
+  s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url,path);
+ }
+});
+test('raw season folder plus explicit episode token is accepted without reading display title',()=>{
+ const s=setup(),a={url:'http://box/stream#keep=1',path:'Season 2/E03.mkv',season:2,episode:3,torrent_hash:'abc',card:{id:1396,original_name:'Show'},title:'Misleading S99E99'};
+ s.L.Android.openPlayer(a.url,a);assert.equal(s.opened[0].url,a.url+'&homeafr_series=tmdb:1396:2:3:3');
+});

@@ -2,18 +2,37 @@
 (function(root,factory){
  'use strict';var api=factory();
  if(typeof module==='object'&&module.exports)module.exports=api;
- else if(root.Lampa)api.install(root.Lampa);
+ else if(root.Lampa&&root.Lampa.Player)api.install(root.Lampa);
 }(typeof window!=='undefined'?window:this,function(){
  'use strict';
  function integer(v,min,max){return /^(0|[1-9][0-9]*)$/.test(String(v))&&Number(v)>=min&&Number(v)<=max;}
  function identity(movie){
-  if(!movie||!(movie.original_name||movie.number_of_seasons||movie.seasons))return null;
+  if(!movie||!(movie.original_name||movie.number_of_seasons||movie.seasons||movie.media_type==='tv'||(movie.name&&!movie.title)))return null;
   if((!movie.source||movie.source==='tmdb')&&integer(movie.id,1,99999999))return 'tmdb:'+movie.id;
   return /^tt[0-9]{7,9}$/.test(movie.imdb_id||'')?'imdb:'+movie.imdb_id:null;
  }
  function annotate(url,meta){
   if(typeof url!=='string'||!/^https?:\/\//.test(url)||/(?:#|&)homeafr_(?:anime|series)=/.test(url))return url;
   return url+(url.indexOf('#')<0?'#':'&')+'homeafr_series='+meta.id+':'+meta.season+':'+meta.episode+':3';
+ }
+ function torrentMetadata(item){
+  if(!item||!item.torrent_hash||typeof item.path!=='string'||!integer(item.season,0,999)||!integer(item.episode,1,99999))return null;
+  var id=identity(item.card);if(!id)return null;
+  var path=item.path,found=[],match;
+  var re=/(?:^|[^a-z0-9])s(\d{1,3})[ ._-]*e(\d{1,5})(?!\d)(?![ ._-]*e\d|[-+]\d)/gi;
+  while((match=re.exec(path)))found.push([Number(match[1]),Number(match[2])]);
+  if(!found.length){
+   re=/(?:^|[^a-z0-9])(\d{1,3})x(\d{1,5})(?!\d)(?![ ._-]*x\d|[-+]\d)/gi;
+   while((match=re.exec(path)))found.push([Number(match[1]),Number(match[2])]);
+  }
+  if(!found.length){
+   var parts=path.split(/[\\/]/),seasons=[];
+   parts.slice(0,-1).forEach(function(p){var m=/^(?:season|сезон|s)[ ._-]*(\d{1,3})$/i.exec(p);if(m)seasons.push(Number(m[1]));});
+   var e=/(?:^|[^a-z0-9])(?:episode|ep|e|серия)[ ._-]*(\d{1,5})(?!\d)(?![ ._-]*e\d|[-+]\d)/i.exec(parts[parts.length-1]);
+   if(seasons.length===1&&e)found.push([seasons[0],Number(e[1])]);
+  }
+  if(found.length!==1||found[0][0]!==Number(item.season)||found[0][1]!==Number(item.episode))return null;
+  return {id:id,season:found[0][0],episode:found[0][1]};
  }
  function install(L,env){
   if(!L||L.__homeSeriesNative||!L.Component||!L.Component.get||!L.Player||!L.Player.listener||
@@ -59,7 +78,15 @@
   L.Component.add=function(name,component){return add.call(this,name,name==='online_mod'?decorate(component):component);};
   var existing=L.Component.get('online_mod');if(existing)L.Component.add('online_mod',existing);
   var open=L.Android.openPlayer;
-  L.Android.openPlayer=function(){if(!internal)cancel();return open.apply(this,arguments);};
+  L.Android.openPlayer=function(url,data){
+   if(!internal)cancel();
+   if(!internal&&data&&data.torrent_hash&&enabled('series_native_skip')){
+    function copy(item){var out=Object.assign({},item),meta=torrentMetadata(item);delete out.playlist;if(meta)out.url=annotate(item.url,meta);return out;}
+    var cloned=copy(data),meta=torrentMetadata(data);if(Array.isArray(data.playlist))cloned.playlist=data.playlist.map(copy);
+    var args=Array.prototype.slice.call(arguments);args[0]=meta?annotate(url,meta):url;args[1]=cloned;return open.apply(this,args);
+   }
+   return open.apply(this,arguments);
+  };
   function launch(session,item,index){
    if(!valid(session))return;
    var meta=session.state.rows[String(item.timeline&&item.timeline.hash)];
