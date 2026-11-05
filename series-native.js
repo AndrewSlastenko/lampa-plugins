@@ -2,7 +2,7 @@
 (function(root,factory){
  'use strict';var api=factory();
  if(typeof module==='object'&&module.exports)module.exports=api;
- else if(root.Lampa&&root.Lampa.Player)api.install(root.Lampa);
+ else if(root.Lampa&&root.Lampa.Player){var log=function(message){if(root.console)root.console.info('HomeSeriesNative '+message);};log('installed='+api.install(root.Lampa,{log:log}));}
 }(typeof window!=='undefined'?window:this,function(){
  'use strict';
  function integer(v,min,max){return /^(0|[1-9][0-9]*)$/.test(String(v))&&Number(v)>=min&&Number(v)<=max;}
@@ -41,6 +41,7 @@
     !L.PlayerPlaylist||!L.PlayerPlaylist.listener||!L.Timeline||!L.Timeline.listener||!L.Android||!L.Android.openPlayer)return false;
   L.__homeSeriesNative=true;env=env||{};
   var later=env.setTimeout||setTimeout,clear=env.clearTimeout||clearTimeout;
+  function debug(message){if(env.log)env.log(message);}
   var states=[],generation=0,pending=null,active=null,internal=false;
   var sequence=0,prefix='home-series-launch:',nonce=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
   var timelineView=L.Timeline.view,timelineUpdate=L.Timeline.update;
@@ -56,6 +57,7 @@
    if(!Original||Original.__homeSeriesNative)return Original;
    function Wrapped(object){
     var returned=Original.apply(this,arguments),component=returned&&typeof returned==='object'?returned:this;
+    debug('component online_mod captured');
     var state={object:object,rows:{},revision:0,voice:'',provider:''};states.push(state);if(states.length>10)states.shift();
     var contextmenu=component.contextmenu,filter=component.filter,destroy=component.destroy;
     if(typeof contextmenu==='function')component.contextmenu=function(params){
@@ -124,16 +126,18 @@
    out.timeline=Object.assign({},nativeRoad,{handler:result});
    if(out.quality){out.quality=Object.assign({},out.quality);Object.keys(out.quality).forEach(function(k){var q=out.quality[k];if(typeof q==='string')out.quality[k]=enabled('series_native_skip')?annotate(q,meta):q;else if(q&&typeof q==='object'&&typeof q.url==='string')out.quality[k]=Object.assign({},q,{url:enabled('series_native_skip')?annotate(q.url,meta):q.url});});}
    var single=Object.assign({},out);delete single.playlist;out.playlist=[single];
+   debug('native episode '+meta.id+':'+meta.season+':'+meta.episode);
    session.hash=hash;session.result=result;session.nativeRoad=nativeRoad;active=session;
    internal=true;try{L.Android.openPlayer(url,out);}finally{internal=false;}
   }
   L.Player.listener.follow('create',function(event){
    cancel();var data=event&&event.data,activity=L.Activity.active();
+   if(activity&&activity.component==='online_mod')debug('create player='+L.Storage.field('player')+' timeline='+Boolean(data&&data.timeline)+' states='+states.length);
    if(!data||!data.timeline||!activity||activity.component!=='online_mod'||
      (!enabled('series_native_skip')&&!enabled('series_native_next'))||!L.Platform||!L.Platform.is('android')||
      (data.launch_player&&data.launch_player!=='android')||(!data.launch_player&&L.Storage&&L.Storage.field&&L.Storage.field('player')!=='android'))return;
    var state=null;for(var i=states.length-1;i>=0;i--)if(states[i].object===activity){state=states[i];break;}
-   var meta=state&&state.rows[String(data.timeline.hash)];if(!meta||typeof data.url!=='string'||!/^https?:\/\//.test(data.url))return;
+   var meta=state&&state.rows[String(data.timeline.hash)];debug('metadata state='+Boolean(state)+' episode='+Boolean(meta));if(!meta||typeof data.url!=='string'||!/^https?:\/\//.test(data.url))return;
    event.abort();var session={generation:generation,state:state,revision:state.revision,activity:activity,meta:meta,first:data,list:[data]};pending=session;
    session.timer=later(function(){if(pending===session&&valid(session)){pending=null;launch(session,data,0);}},0);
   });
