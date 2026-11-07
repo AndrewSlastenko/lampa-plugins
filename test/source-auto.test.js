@@ -25,6 +25,14 @@ test('saved exact voice and provider beat pixels but missing saved voice is not 
  assert.equal(api.choose(list,{source:'veoveo',voice:'LostFilm'}).source,'veoveo');
  assert.equal(api.choose(list,{source:'veoveo',voice:'AlexFilm'}),null);
 });
+
+test('TV3 dubbing is eligible and an explicit saved voice survives the automatic studio policy',()=>{
+ for(const label of ['Дубляж ТВ3','01. Дубляж. ТВ-3'])assert.equal(api.choose(ranked([voice(label)]))?.voice,label);
+ const preferred={source:'veoveo',voice:'ТВ3'};
+ const rows=api.candidates({source:'veoveo',voices:[voice('ТВ3'),voice('Original')]},preferred);
+ assert.equal(api.choose(rows,preferred).voice,'ТВ3');
+ assert.equal(rows.some(row=>row.voice==='Original'),false);
+});
 function harness(responses={}){
  assert.equal(typeof api.createScanner,'function','bounded scanner must exist');
  let now=0,id=0;const timers=new Map(),calls=[];
@@ -47,6 +55,14 @@ test('saved working choice stops after one probe; missing saved voice returns al
  assert.equal(h.calls.length,1);assert.equal(result.best.voice,'LostFilm');
  h.scanner.scan(h.movie,{season:1,episode:4,preferred:{source:'veoveo',voice:'AlexFilm'}},r=>result=r);
  assert.equal(result.best,null);assert.equal(result.needsChoice,true);assert.ok(result.alternatives.length);
+});
+
+test('scanner restores a saved voice outside studio tiers, including after a different cached voice',()=>{
+ const h=harness({veoveo:[voice('ТВ3'),voice('Other manual studio'),voice('TVShows')]});let result;
+ const run=name=>h.scanner.scan(h.movie,{season:1,episode:1,preferred:{source:'veoveo',voice:name}},r=>result=r);
+ run('ТВ3');assert.equal(result.best?.voice,'ТВ3');assert.equal(h.calls.length,1);
+ run('Other manual studio');assert.equal(result.best?.voice,'Other manual studio');
+ assert.equal(h.calls.length,2);
 });
 test('cache is episode-specific, expires, and full rescan bypasses it',()=>{
  const h=harness({veoveo:[voice('TVShows')]});const run=(opts={})=>h.scanner.scan(h.movie,{season:1,episode:1,...opts},()=>{});

@@ -10,7 +10,7 @@
   if(/hdrezka(?:studio)?|твшоус|tvshows|redheadsound/.test(s))return 0;
   if(/кубиквкубе|kubikvkube/.test(s))return 1;
   if(/lostfilm|newstudio|alexfilm/.test(s))return 2;
-  if(/дублирован|многоголос|двухголос|профессиональн|русск/.test(s)&&!/субтитр/.test(s))return 3;
+  if(/дублирован|дубляж|многоголос|двухголос|профессиональн|русск/.test(s)&&!/субтитр/.test(s))return 3;
   return 99;
  }
  function resolution(value){
@@ -20,10 +20,12 @@
   if(/full\s*hd|fhd/.test(s))return 1080;
   m=s.match(/(?:^|[^0-9])(2160|1440|1080|720|576|480|360)(?:p|i|[^0-9]|$)/);return m?Number(m[1]):0;
  }
- function candidates(result){
+ function candidates(result,preferred){
   var out=[];if(!result||typeof result.source!=='string'||!Array.isArray(result.voices))return out;
   result.voices.forEach(function(group){
-   if(!group||voiceTier(group.voice)===99||!group.qualities)return;
+   if(!group||!group.qualities)return;
+   var saved=preferred&&preferred.source===result.source&&preferred.voice===group.voice;
+   if(voiceTier(group.voice)===99&&!saved)return;
    Object.keys(group.qualities).forEach(function(q){
     var stream=group.qualities[q],url=typeof stream==='string'?stream:stream&&stream.url;
     if(typeof url!=='string'||!/^https?:\/\/[^\s]+$/i.test(url)||/cam|tsrip|telesync/i.test(q))return;
@@ -40,7 +42,7 @@
   var later=env.setTimeout||setTimeout,clear=env.clearTimeout||clearTimeout,now=env.now||Date.now,cache={};
   return {scan:function(movie,opts,callback){
    opts=opts||{};var cancelled=false,finished=false,sourceTimer,deadline,rows=[],asked={},catalog=[{id:'veoveo'},{id:'hdvb'},{id:'collaps'}],meta={},count=0;
-   var key=movieKey(movie)+':'+(opts.season||0)+':'+(opts.episode||0)+':'+(opts.preferred?opts.preferred.source:'')+':'+(opts.hidden||[]).slice().sort().join(','),max=opts.full?30:3;
+   var key=JSON.stringify([movieKey(movie),opts.season||0,opts.episode||0,opts.preferred&&opts.preferred.source,opts.preferred&&opts.preferred.voice,(opts.hidden||[]).slice().sort()]),max=opts.full?30:3;
    function stop(){cancelled=true;clear(sourceTimer);clear(deadline);}
    function finish(){
     if(cancelled||finished)return;finished=true;clear(sourceTimer);clear(deadline);
@@ -66,7 +68,7 @@
      if(!error&&result){
       if(Array.isArray(result.sources))catalog=result.sources;
       if(result._meta)meta=result._meta;
-      if(result.source===source&&allowed(source))rows=rows.concat(candidates(result));
+      if(result.source===source&&allowed(source))rows=rows.concat(candidates(result,opts.preferred));
      }next();
     }
     sourceTimer=later(function(){done(new Error('timeout'));},5000);
@@ -78,9 +80,9 @@
   }};
  }
  function install(L,env){
-  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.2',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
+  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.3',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.2';env=env||{};var owners=[],permits=[];
+  L.__homeSourceAuto='0.1.3';env=env||{};var owners=[],permits=[];
   if(L.Player&&L.Player.listener&&L.Player.listener.follow)L.Player.listener.follow('create',function(event){
    var data=event&&event.data;if(!data||typeof data.url!=='string'||!data.episode)return;
    for(var i=permits.length-1;i>=0;i--){var p=permits[i];if(p.urls.indexOf(data.url)>=0&&Number(data.season)===p.season&&Number(data.episode)===p.episode){if(!p.valid()&&event.abort)event.abort();break;}}
@@ -128,7 +130,7 @@
      var seen={},items=[];
      result.alternatives.forEach(function(row){var key=row.source+'\n'+row.voice;if(seen[key])return;seen[key]=true;items.push({title:row.voice+' · '+row.quality,subtitle:row.source,homeCandidate:row});});
      if(!items.length){notice('Подходящий поток не найден. Выберите источник вручную');return;}
-     L.Select.show({title:'Выбранной озвучки нет — выберите другую',items:items,onSelect:function(item){L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){L.Controller.toggle('content');}});
+     L.Select.show({title:'Озвучка не найдена в проверенных источниках',items:items,onSelect:function(item){L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){L.Controller.toggle('content');}});
     }
     function scan(season,episode,full,callback,onChanged,keepList){
      cancel();var token=epoch,snapshot=fingerprint();
@@ -145,7 +147,7 @@
     if(typeof request==='function'&&typeof change==='function')c.requestStreams=function(){
      if(internal||!first||manual||!enabled())return request.apply(this,arguments);
      first=false;var args=arguments,r=resume();
-     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {notice(result.needsChoice?'Сохранённая озвучка не найдена. Ручной выбор сохранён':'Автоподбор не нашёл поток. Доступен ручной выбор');request.apply(c,args);}},function(){manual=true;request.call(c,true);});
+     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {notice(result.needsChoice?'Озвучка не найдена в проверенных источниках. Доступен полный поиск':'Автоподбор не нашёл поток. Доступен ручной выбор');request.apply(c,args);}},function(){manual=true;request.call(c,true);});
     };
     ['changeBalanser','switchSeason','pickVoice','destroy'].forEach(function(name){var fn=c[name];if(typeof fn==='function')c[name]=function(){if(!internal){cancel();if(name==='changeBalanser'||name==='pickVoice')manual=true;first=false;}if(name==='destroy')dead=true;return fn.apply(this,arguments);};});
     if(typeof playEpisode==='function')c.playEpisode=function(season,episode){
