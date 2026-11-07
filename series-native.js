@@ -171,7 +171,8 @@
     if(session.state.kind==='bwa_online'&&L.Storage&&typeof L.Storage.set==='function'){
      var movie=session.activity.movie;
      if(movie&&movie.id){
-      [['bwa_resume',{season:meta.season,episode:meta.episode}],['bwa_lastvoice',{src:meta.provider,voice:meta.voice}],['bwa_title_src',meta.provider]].forEach(function(entry){
+      var lastVoice={src:meta.provider,voice:meta.voice};if(session.state.rawVoice!==undefined&&session.state.rawVoice!==null)lastVoice.raw=session.state.rawVoice;
+      [['bwa_resume',{season:meta.season,episode:meta.episode}],['bwa_lastvoice',lastVoice],['bwa_title_src',meta.provider]].forEach(function(entry){
        var all=Object.assign({},L.Storage.get(entry[0],{})||{});all[movie.id]=entry[1];L.Storage.set(entry[0],all);
       });
      }

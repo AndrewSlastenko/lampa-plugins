@@ -39,6 +39,7 @@ test('voice keys match spelling wrappers without losing brand digits or merging 
  assert.equal(api.voiceKey('01. Дубляж. ТВ-3 (RUS)'),api.voiceKey('TV3'));
  assert.equal(api.voiceKey('02. Многоголосый. Кубик в Кубе [RU]'),api.voiceKey('Kubik v Kube'));
  assert.equal(api.voiceKey('Дублированный'), '');assert.equal(api.voiceKey('Русский'), '');
+ for(const generic of ['Профессиональный многоголосый перевод','Русская озвучка','Russian Dub'])assert.equal(api.voiceKey(generic),'');
  assert.notEqual(api.voiceKey('Studio 1'),api.voiceKey('Studio 2'));
  assert.notEqual(api.voiceKey('TVShows'),api.voiceKey('TVShow'));
  assert.equal(api.choose(ranked([voice('NotTVShows')])),null);
@@ -56,6 +57,18 @@ test('ambiguous provider aliases stay separate unless the saved label is exact',
  const list=ranked([{...voice('01. Дубляж. ТВ-3'),raw:'a'},{...voice('TV3'),raw:'b'}]);
  assert.equal(api.choose(list,{source:'veoveo',voice:'ТВ3'}),null);
  assert.equal(api.choose(list,{source:'veoveo',voice:'TV3'})?.raw,'b');
+});
+test('generic language and original labels restore locally but never identify another provider',()=>{
+ for(const label of ['Original','English','Субтитры','Оригинал','Английский']){
+  assert.equal(api.choose(ranked([voice(label)],'hdvb'),{source:'veoveo',voice:label}),null);
+  assert.equal(api.choose(ranked([voice(label)]),{source:'veoveo',voice:label})?.voice,label);
+ }
+});
+test('provider raw identity disambiguates a remembered label without leaking between providers',()=>{
+ const rows=ranked([{...voice('Unknown Studio'),raw:'A'},{...voice('Unknown Studio'),raw:'B'}]);
+ assert.equal(api.choose(rows,{source:'veoveo',voice:'Unknown Studio',raw:'B'})?.raw,'B');
+ assert.equal(api.choose(rows,{source:'veoveo',voice:'Unknown Studio',raw:'missing'}),null);
+ assert.equal(api.choose(ranked([{...voice('Other'),raw:'B'}],'hdvb'),{source:'veoveo',voice:'Unknown Studio',raw:'B'}),null);
 });
 function harness(responses={}){
  assert.equal(typeof api.createScanner,'function','bounded scanner must exist');
@@ -102,9 +115,9 @@ test('timeout completes once, cancellation suppresses late callbacks and malform
  const j=harness({veoveo:'timeout'});let late=0;const stop=j.scanner.scan(j.movie,{},()=>late++);stop();j.calls[0].cb(null,{source:'veoveo',voices:[voice('TVShows')]});j.tick(15000);assert.equal(late,0);
 });
 
-function integration({deferred=false,deferredOriginal=false,deferredHandoff=false,foreignDecorator=false,stored={},serial=true}={}){
+function integration({deferred=false,deferredOriginal=false,deferredHandoff=false,foreignDecorator=false,stored={},serial=true,groups:givenGroups,responses}={}){
  let active={component:'bwa_online',movie:{id:1396,source:'tmdb',...(serial?{name:'Breaking Bad',original_name:'Breaking Bad'}:{title:'Film'})}};
- const values={...stored},launched=[],requests=[],pending=[],originalPending=[],handoffs=[],playerListeners=[],notices=[];const groups=[voice('LostFilm','4K'),voice('TVShows')];
+ const values={...stored},launched=[],requests=[],pending=[],originalPending=[],handoffs=[],playerListeners=[],notices=[],closes=[];const groups=givenGroups||[voice('LostFilm','4K'),voice('TVShows')];
  const flat=g=>({...g,qualities:Object.fromEntries(Object.entries(g.qualities).map(([q,v])=>[q,v.url]))});
  const registry={};
  registry.bwa_online=function(object){
@@ -122,13 +135,89 @@ function integration({deferred=false,deferredOriginal=false,deferredHandoff=fals
  };
  const L={Component:{get:k=>registry[k],add:(k,v)=>registry[k]=v},Activity:{active:()=>active},
  Storage:{get:(k,f)=>values[k]===undefined?f:values[k],set:(k,v)=>values[k]=v},Noty:{show:t=>notices.push(t)},
- Select:{show:options=>{L.lastMenu=options;},close:()=>{}},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}},Player:{listener:{follow:(event,fn)=>playerListeners.push(fn)}}};
- const probes=[];const env={BWA_API:{resolve:(m,opts,cb)=>{probes.push(opts);const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
+ Select:{show:options=>{L.lastMenu=options;},close:()=>closes.push(true)},Controller:{toggle:()=>{}},SettingsApi:{addParam:()=>{}},Player:{listener:{follow:(event,fn)=>playerListeners.push(fn)}}};
+ const probes=[];const env={BWA_API:{resolve:(m,opts,cb)=>{probes.push(opts);const finish=()=>cb(null,{source:opts.source,sources:[{id:'veoveo'},{id:'hdvb'},{id:'videodb'}],voices:responses?(responses[opts.source]||[]):opts.source==='veoveo'?groups:[voice('TVShows','4K')]});if(deferred)pending.push(finish);else finish();}}};
  assert.equal(api.install(L,env),true,'adapter installs');
  if(foreignDecorator){const original=registry.bwa_online;function Other(){return original.apply(this,arguments);}Other.prototype=original.prototype;L.Component.add('bwa_online',Other);}
  const c=new registry.bwa_online(active);
- return {L,c,values,launched,requests,pending,probes,originalPending,handoffs,notices,leave:()=>active={component:'full'},groups};
+ return {L,c,values,launched,requests,pending,probes,originalPending,handoffs,notices,closes,leave:()=>active={component:'full'},groups};
 }
+
+test('unknown-only scans return every real voice for explicit choice, also from cache',()=>{
+ const h=harness({veoveo:[voice('Studio 9'),voice('Дубляж')],hdvb:[voice('Original')]});let result;
+ for(let i=0;i<2;i++){
+  h.scanner.scan(h.movie,{season:1,episode:1},r=>result=r);
+  assert.equal(result.best,null);assert.equal(result.needsChoice,true);
+  assert.deepEqual(result.alternatives.map(x=>x.voice).sort(),['Original','Studio 9','Дубляж'].sort());
+ }
+});
+
+test('missing saved provider scans other providers for a voice alias and picks its best quality',()=>{
+ const h=harness({veoveo:[voice('Other')],hdvb:[voice('TV3','720p')],videodb:[voice('01. Дубляж. ТВ-3','4K')]});let result;
+ h.scanner.scan(h.movie,{preferred:{source:'veoveo',voice:'ТВ-3'}},r=>result=r);
+ assert.equal(result.best?.source,'videodb');assert.equal(result.best?.quality,'4K');
+ assert.deepEqual(h.calls.map(c=>c.opts.source),['veoveo','hdvb','videodb']);
+});
+
+test('fallback chooser launches the actual selected provider raw and best quality',()=>{
+ const foreign={...voice('Unfamiliar Studio','720p'),raw:'provider-id-77',qualities:{'720p':{url:'https://foreign/720'},'4K':{url:'https://foreign/2160'}}};
+ const h=integration({responses:{veoveo:[voice('Other Studio')],hdvb:[foreign]}});h.c.playEpisode(1,8);
+ assert.equal(h.launched.length,0);const menu=h.L.lastMenu;assert.ok(menu);
+ const item=menu.items.find(x=>x.homeCandidate?.source==='hdvb');assert.ok(item);assert.match(item.subtitle,/hdvb/);assert.match(item.title,/4K/);
+ menu.onSelect(item);assert.equal(h.launched.length,1);assert.equal(h.launched[0].source,'hdvb');
+ assert.equal(h.launched[0].group.raw,'provider-id-77');assert.deepEqual(h.launched[0].group.qualities,{'4K':'https://foreign/2160'});
+ assert.deepEqual(h.values.bwa_lastvoice[1396],{src:'hdvb',voice:'Unfamiliar Studio',raw:'provider-id-77'});
+});
+test('explicit duplicate-label raw choice survives the next episode and cached scans',()=>{
+ const groups=[{...voice('Unknown Studio'),raw:'A'},{...voice('Unknown Studio'),raw:'B'}];
+ const h=integration({groups,responses:{veoveo:groups}});h.c.playEpisode(1,1);
+ const menu=h.L.lastMenu;menu.onSelect(menu.items.find(x=>x.homeCandidate.raw==='B'));
+ assert.equal(h.values.bwa_lastvoice[1396].raw,'B');
+ h.c.playEpisode(1,2);assert.equal(h.launched.length,2);assert.equal(h.launched[1].group.raw,'B');
+ h.c.playEpisode(1,2);assert.equal(h.launched.length,3);assert.equal(h.launched[2].group.raw,'B');
+});
+test('movie handoff uses the explicitly chosen raw group when upstream titles are identical',()=>{
+ const groups=[{...voice('Unknown Studio','720p','https://cdn/a'),raw:'A'},{...voice('Unknown Studio','4K','https://cdn/b'),raw:'B'}];
+ const h=integration({serial:false,groups,responses:{veoveo:groups}});h.c.requestStreams(false);
+ const menu=h.L.lastMenu;menu.onSelect(menu.items.find(x=>x.homeCandidate.raw==='B'));
+ h.c.play(groups[0]);assert.equal(h.launched[0].group.raw,'B');assert.equal(h.launched[0].group.qualities['4K'].url,'https://cdn/b');
+});
+test('direct movie voice cards can override an automatic choice without opening voice filters',()=>{
+ const h=integration({serial:false});h.c.requestStreams(false);
+ h.c.play(voice('Manual Studio','720p','https://cdn/manual'));
+ assert.equal(h.launched[0].group.voice,'Manual Studio');assert.equal(h.values.bwa_lastvoice[1396].voice,'Manual Studio');
+});
+
+test('initial unknown-only search and full rescan both offer actual fallback voices',()=>{
+ for(const full of [false,true]){
+  const h=integration({responses:{veoveo:[voice('Unfamiliar Studio')]}});
+  if(full){h.c.pickSource();const menu=h.L.lastMenu;menu.onSelect(menu.items.find(x=>x.homeAutoFull));}
+  else h.c.requestStreams(false);
+  assert.equal(h.launched.length,0);assert.ok(h.L.lastMenu?.items.some(x=>x.homeCandidate?.voice==='Unfamiliar Studio'));
+ }
+});
+
+test('stale fallback choice neither changes preferences nor closes another activity menu',()=>{
+ const h=integration({stored:{bwa_lastvoice:{1396:{src:'veoveo',voice:'Missing'}}}});h.c.requestStreams(false);
+ const menu=h.L.lastMenu;assert.ok(menu);const before=JSON.stringify(h.values),closed=h.closes.length;
+ h.leave();menu.onSelect(menu.items.find(x=>x.homeCandidate));
+ assert.equal(JSON.stringify(h.values),before);assert.equal(h.closes.length,closed);assert.equal(h.launched.length,0);
+});
+
+test('manual unfamiliar episode and movie choices retain their provider group and best quality',()=>{
+ const group={voice:'New Studio 27',raw:'opaque',qualities:{'720p':'https://manual/720','4K':'https://manual/4k'},order:['720p','4K']};
+ const h=integration();h.c.playGroupEpisode(group,1,3,[group]);
+ assert.equal(h.launched[0].group.raw,'opaque');assert.deepEqual(h.launched[0].group.qualities,{'4K':'https://manual/4k'});
+ const m=integration({serial:false});m.c.play(group);assert.deepEqual(m.launched[0].group.qualities,{'4K':'https://manual/4k'});
+});
+
+test('API and UI voice spellings restore a unique same-provider alias without disabling auto checks',()=>{
+ const label='01. Дубляж. ТВ-3 (RUS)';
+ const h=integration({groups:[voice(label)],responses:{veoveo:[voice('TV3')]},stored:{bwa_lastvoice:{1396:{src:'veoveo',voice:label}}}});
+ h.c.requestStreams(false);assert.equal(h.values.bwa_lastvoice[1396].voice,label);
+ h.c.buildFilters();const n=h.probes.length;h.c.playEpisode(1,9);
+ assert.ok(h.probes.length>n);assert.equal(h.launched[0].group.voice,'TV3');
+});
 test('initial selection applies preferred voice before rendering without launching on its own',()=>{
  const h=integration();h.c.requestStreams(false);assert.equal(h.launched.length,0);
  assert.equal(h.values.bwa_lastvoice[1396].voice,'TVShows');assert.equal(h.requests[0],'hdvb');

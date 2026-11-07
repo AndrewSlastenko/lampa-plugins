@@ -8,9 +8,10 @@
  function voiceKey(value){
   var s=String(value||'').toLowerCase().replace(/ё/g,'е');if(s.normalize)s=s.normalize('NFKC');
   s=s.replace(/^\s*\d+\s*[.)-]\s*/,'');
-  s=s.replace(/(^|[^a-zа-я0-9])(?:дубляж|дублированн(?:ый|ая|ое)|(?:одно|двух|много)голос(?:ый|ая|ое)|профессиональн(?:ый|ая|ое)|любительск(?:ий|ая|ое)|закадров(?:ый|ая|ое)|русский|русская|русские|рус|russian|rus|ru|dubbed|dubbing|voiceover)(?=$|[^a-zа-я0-9])/g,' ');
+  s=s.replace(/(^|[^a-zа-я0-9])(?:дубляж|дублированн(?:ый|ая|ое)|(?:одно|двух|много)голос(?:ый|ая|ое)|профессиональн(?:ый|ая|ое)|любительск(?:ий|ая|ое)|закадров(?:ый|ая|ое)|перевод|озвучка|русский|русская|русские|рус|russian|rus|ru|dub|dubbed|dubbing|voiceover)(?=$|[^a-zа-я0-9])/g,' ');
   var letters='абвгдежзийклмнопрстуфхцчшщъыьэюя',latin=['a','b','v','g','d','e','zh','z','i','y','k','l','m','n','o','p','r','s','t','u','f','kh','ts','ch','sh','shch','','y','','e','yu','ya'];
-  return s.replace(/[а-я]/g,function(c){return latin[letters.indexOf(c)];}).replace(/[^a-z0-9]/g,'');
+  s=s.replace(/[а-я]/g,function(c){return latin[letters.indexOf(c)];}).replace(/[^a-z0-9]/g,'');
+  return /^(original|originalaudio|english|eng|en|originalnyy|originalnaya|original|angliyskiy|angliyskaya|subtitry|subtitles|subs)$/.test(s)?'':s;
  }
  function voiceTier(value){
   var s=voiceKey(value);
@@ -26,7 +27,7 @@
   if(/full\s*hd|fhd/.test(s))return 1080;
   m=s.match(/(?:^|[^0-9])(2160|1440|1080|720|576|480|360)(?:p|i|[^0-9]|$)/);return m?Number(m[1]):0;
  }
- function candidates(result,preferred){
+ function candidates(result){
   var out=[];if(!result||typeof result.source!=='string'||!Array.isArray(result.voices))return out;
   result.voices.forEach(function(group){
    if(!group||typeof group.voice!=='string'||!group.voice.trim()||!group.qualities)return;
@@ -37,17 +38,22 @@
    });
   });return out;
  }
+ function highestQuality(rows){return rows.slice().sort(function(a,b){return b.height-a.height;})[0]||null;}
  function choose(list,preferred){
-  function highest(rows){return rows.slice().sort(function(a,b){return b.height-a.height;})[0]||null;}
   function unique(rows){var ids=[];rows.forEach(function(c){var key=JSON.stringify([c.voice,c.raw]);if(ids.indexOf(key)<0)ids.push(key);});return ids.length===1;}
   if(preferred){
-   var own=list.filter(function(c){return c.source===preferred.source;}),exact=own.filter(function(c){return c.voice===preferred.voice;});
-   if(exact.length)return unique(exact)?highest(exact):null;
+   var own=list.filter(function(c){return c.source===preferred.source;});
+   if(preferred.raw!==undefined&&preferred.raw!==null){
+    var raw=own.filter(function(c){return c.raw===preferred.raw&&(c.voice===preferred.voice||(voiceKey(preferred.voice)&&voiceKey(c.voice)===voiceKey(preferred.voice)));});
+    if(raw.length)return unique(raw)?highestQuality(raw):null;
+   }
+   var exact=own.filter(function(c){return c.voice===preferred.voice;});
+   if(exact.length)return unique(exact)?highestQuality(exact):null;
    var key=voiceKey(preferred.voice);if(!key)return null;
    var aliases=own.filter(function(c){return voiceKey(c.voice)===key;});
-   if(aliases.length)return unique(aliases)?highest(aliases):null;
+   if(aliases.length)return unique(aliases)?highestQuality(aliases):null;
    var other=list.filter(function(c){return voiceKey(c.voice)===key;}),valid=other.filter(function(c){return unique(other.filter(function(row){return row.source===c.source;}));});
-   return highest(valid);
+   return highestQuality(valid);
   }
   var rows=list.filter(function(c){return c.tier<99;});
   rows.sort(function(a,b){return a.tier-b.tier||b.height-a.height;});return rows[0]||null;
@@ -57,12 +63,12 @@
   var later=env.setTimeout||setTimeout,clear=env.clearTimeout||clearTimeout,now=env.now||Date.now,cache={};
   return {scan:function(movie,opts,callback){
    opts=opts||{};var cancelled=false,finished=false,sourceTimer,deadline,rows=[],asked={},catalog=[{id:'veoveo'},{id:'hdvb'},{id:'collaps'}],meta={},count=0;
-   var key=JSON.stringify([movieKey(movie),opts.season||0,opts.episode||0,opts.preferred&&opts.preferred.source,opts.preferred&&opts.preferred.voice,(opts.hidden||[]).slice().sort()]),max=opts.full?30:3;
+   var key=JSON.stringify([movieKey(movie),opts.season||0,opts.episode||0,opts.preferred&&opts.preferred.source,opts.preferred&&opts.preferred.voice,opts.preferred&&opts.preferred.raw,(opts.hidden||[]).slice().sort()]),max=opts.full?30:3;
    function stop(){cancelled=true;clear(sourceTimer);clear(deadline);}
    function finish(){
     if(cancelled||finished)return;finished=true;clear(sourceTimer);clear(deadline);
     if(rows.length)cache[key]={at:now(),rows:rows.slice()};var best=choose(rows,opts.preferred);
-    callback({best:best,alternatives:rows.slice().sort(function(a,b){return a.tier-b.tier||b.height-a.height;}),needsChoice:!!opts.preferred&&!best,checked:count});
+    callback({best:best,alternatives:rows.slice().sort(function(a,b){return a.tier-b.tier||b.height-a.height;}),needsChoice:!best&&(!!opts.preferred||rows.length>0),checked:count});
    }
    if(!movieKey(movie)){finish();return stop;}
    if(!opts.full&&cache[key]&&now()-cache[key].at<120000){rows=cache[key].rows.slice();finish();return stop;}
@@ -70,7 +76,8 @@
    function allowed(id){var entry=catalog.filter(function(s){return s&&s.id===id;})[0],m=meta[id]||{};return entry&&!entry.paid&&!entry.bound&&!m.account_only&&!m.avoid&&!m.auth&&id!=='peregon'&&id!=='kinogo'&&(!opts.hidden||opts.hidden.indexOf(id)<0);}
    function next(){
     if(cancelled||finished)return;
-    if(opts.preferred&&choose(rows,opts.preferred))return finish();
+    var saved=opts.preferred&&choose(rows,opts.preferred);
+    if(saved&&saved.source===opts.preferred.source)return finish();
     if(count>=max)return finish();
     var priority=['veoveo','hdvb','collaps','videodb'];
     var available=catalog.filter(function(s){return s&&allowed(s.id)&&!asked[s.id];}).sort(function(a,b){var x=priority.indexOf(a.id),y=priority.indexOf(b.id);return (x<0?99:x)-(y<0?99:y);});
@@ -83,7 +90,7 @@
      if(!error&&result){
       if(Array.isArray(result.sources))catalog=result.sources;
       if(result._meta)meta=result._meta;
-      if(result.source===source&&allowed(source))rows=rows.concat(candidates(result,opts.preferred));
+      if(result.source===source&&allowed(source))rows=rows.concat(candidates(result));
      }next();
     }
     sourceTimer=later(function(){done(new Error('timeout'));},5000);
@@ -95,9 +102,9 @@
   }};
  }
  function install(L,env){
-  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.3',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
+  if(L&&L.Manifest)L.Manifest.plugins={type:'other',version:'0.1.4',name:'Автовыбор источника BWA',description:'Привычная озвучка, затем качество. Быстрый и полный поиск'};
   if(!L||L.__homeSourceAuto||!L.Component||!L.Component.get||!L.Storage||!L.Select)return false;
-  L.__homeSourceAuto='0.1.3';env=env||{};var owners=[],permits=[];
+  L.__homeSourceAuto='0.1.4';env=env||{};var owners=[],permits=[];
   if(L.Player&&L.Player.listener&&L.Player.listener.follow)L.Player.listener.follow('create',function(event){
    var data=event&&event.data;if(!data||typeof data.url!=='string'||!data.episode)return;
    for(var i=permits.length-1;i>=0;i--){var p=permits[i];if(p.urls.indexOf(data.url)>=0&&Number(data.season)===p.season&&Number(data.episode)===p.episode){if(!p.valid()&&event.abort)event.abort();break;}}
@@ -110,11 +117,12 @@
   function decorate(Original){
    if(!Original||Original.__homeSourceAuto)return Original;
    function Wrapped(object){
-    var returned=Original.apply(this,arguments),c=returned&&typeof returned==='object'?returned:this,movie=object.movie||{},epoch=0,dead=false,internal=false,first=true,cancelScan=null,desired=null,playingChoice=null,selecting=false,manual=false;
+    var returned=Original.apply(this,arguments),c=returned&&typeof returned==='object'?returned:this,movie=object.movie||{},epoch=0,dead=false,internal=false,first=true,cancelScan=null,desired=null,playingChoice=null,selecting=false,manual=false,selectedUiVoice=null;
     var request=c.requestStreams,change=c.changeBalanser,filters=c.buildFilters,pickVoice=c.pickVoice,playEpisode=c.playEpisode,playGroup=c.playGroupEpisode,play=c.play;
     function valid(token){return !dead&&epoch===token&&L.Activity.active()===object;}
     function cancel(){epoch++;if(cancelScan)cancelScan();cancelScan=null;desired=null;playingChoice=null;}
-    function preferred(){var last=read('bwa_lastvoice',movie.id);return last&&last.src&&last.voice?{source:last.src,voice:last.voice}:null;}
+    function preferred(){var last=read('bwa_lastvoice',movie.id);return last&&last.src&&last.voice?{source:last.src,voice:last.voice,raw:last.raw}:null;}
+    function remember(best,label){var saved={src:best.source,voice:label||best.voice};if(best.raw!==undefined&&best.raw!==null)saved.raw=best.raw;write('bwa_lastvoice',movie.id,saved);}
     function fingerprint(){return JSON.stringify([read('bwa_title_src',movie.id),read('bwa_lastvoice',movie.id)]);}
     function selectVoice(){
      if(!desired||selecting||typeof pickVoice!=='function')return;
@@ -123,29 +131,31 @@
      // Consume only this invocation, restore the public method in finally.
      L.Select.show=function(options){
       if(!options||options.title!=='Озвучка'||!Array.isArray(options.items))return show.apply(this,arguments);
-      var item=options.items.filter(function(item){return item.title===desired.voice;})[0];
-      if(item&&typeof options.onSelect==='function'){matched=true;options.onSelect(item);}
+      var items=options.items.filter(function(item){return item.title===desired.voice;}),key=voiceKey(desired.voice);
+      if(!items.length&&key)items=options.items.filter(function(item){return voiceKey(item.title)===key;});
+      var item=items.length===1&&items[0];
+      if(item&&typeof options.onSelect==='function'){matched=true;selectedUiVoice=item.title;options.onSelect(item);remember(desired,item.title);}
      };
      try{internal=true;pickVoice.call(c);}finally{internal=false;selecting=false;L.Select.show=show;}
      return matched;
     }
     if(typeof filters==='function')c.buildFilters=function(){
-     if(desired&&!internal&&!selecting){var saved=preferred();if(saved&&(saved.source!==desired.source||saved.voice!==desired.voice)){cancel();manual=true;}}
+     if(desired&&!internal&&!selecting){var saved=preferred();if(saved&&(saved.source!==desired.source||(saved.voice!==desired.voice&&saved.voice!==selectedUiVoice))){cancel();manual=true;}}
      var out=filters.apply(this,arguments);if(desired&&!selecting)selectVoice();return out;
     };
     function adopt(best,load){
-     desired=best;var wrappedRequest=c.requestStreams;
+     desired=best;selectedUiVoice=null;var wrappedRequest=c.requestStreams;
      internal=true;c.requestStreams=function(){};
-     try{change.call(c,best.source);write('bwa_lastvoice',movie.id,{src:best.source,voice:best.voice});}
+     try{change.call(c,best.source);remember(best);}
      finally{c.requestStreams=wrappedRequest;internal=false;}
      if(load)request.call(c,true);
     }
     function hidden(){var h=L.Storage.get('bwa_sources_hidden',[]);try{return typeof h==='string'?JSON.parse(h):h||[];}catch(ignore){return [];}}
     function alternatives(result,onPick){
-     var seen={},items=[];
-     result.alternatives.forEach(function(row){var key=row.source+'\n'+row.voice;if(seen[key])return;seen[key]=true;items.push({title:row.voice+' · '+row.quality,subtitle:row.source,homeCandidate:row});});
+     var seen=Object.create(null),items=[],token=epoch;
+     result.alternatives.forEach(function(row){var key=JSON.stringify([row.source,row.voice,row.raw]);if(seen[key])return;seen[key]=true;items.push({title:row.voice+' · '+row.quality,subtitle:row.source,homeCandidate:row});});
      if(!items.length){notice('Подходящий поток не найден. Выберите источник вручную');return;}
-     L.Select.show({title:'Озвучка не найдена в проверенных источниках',items:items,onSelect:function(item){L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){L.Controller.toggle('content');}});
+     L.Select.show({title:'Выберите озвучку и источник',items:items,onSelect:function(item){if(!valid(token))return;L.Select.close();if(item.homeCandidate)onPick(item.homeCandidate);},onBack:function(){if(valid(token))L.Controller.toggle('content');}});
     }
     function scan(season,episode,full,callback,onChanged,keepList){
      cancel();var token=epoch,snapshot=fingerprint();
@@ -162,7 +172,7 @@
     if(typeof request==='function'&&typeof change==='function')c.requestStreams=function(){
      if(internal||!first||manual||!enabled())return request.apply(this,arguments);
      first=false;var args=arguments,r=resume();
-     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {notice(result.needsChoice?'Озвучка не найдена в проверенных источниках. Доступен полный поиск':'Автоподбор не нашёл поток. Доступен ручной выбор');request.apply(c,args);}},function(){manual=true;request.call(c,true);});
+     scan(r.season,r.episode,false,function(result){if(result.best)adopt(result.best,true);else {request.apply(c,args);if(result.needsChoice)alternatives(result,function(best){adopt(best,true);});else notice('Автоподбор не нашёл поток. Доступен ручной выбор');}},function(){manual=true;request.call(c,true);});
     };
     ['changeBalanser','switchSeason','pickVoice','destroy'].forEach(function(name){var fn=c[name];if(typeof fn==='function')c[name]=function(){if(!internal){cancel();if(name==='changeBalanser'||name==='pickVoice')manual=true;first=false;}if(name==='destroy')dead=true;return fn.apply(this,arguments);};});
     if(typeof playEpisode==='function')c.playEpisode=function(season,episode){
@@ -183,8 +193,8 @@
     if(typeof playGroup==='function')c.playGroupEpisode=function(group,season,episode,groups){
      if(dead||L.Activity.active()!==object)return;
      var wanted=playingChoice;playingChoice=null;
-     if(wanted){group=(groups||[group]).filter(function(g){return g.voice===wanted.voice;})[0];if(!group){notice('Озвучка стала недоступна. Выберите другую вручную');return;}}
-     var list=candidates({source:wanted?wanted.source:'manual',voices:[group]}),best=choose(list);
+     if(wanted){group=(groups||[group]).filter(function(g){return g.voice===wanted.voice&&g.raw===wanted.raw;})[0];if(!group){notice('Озвучка стала недоступна. Выберите другую вручную');return;}}
+     var list=candidates({source:wanted?wanted.source:'manual',voices:[group]}),best=highestQuality(list);
      if(enabled()&&best){var clone=Object.assign({},group);clone.order=[best.quality];clone.qualities={};clone.qualities[best.quality]=group.qualities[best.quality];group=clone;}
      var token=epoch,urls=[];
      [group,wanted&&wanted.group].forEach(function(g){if(g&&g.qualities)Object.keys(g.qualities).forEach(function(q){var v=g.qualities[q];if(typeof v==='string')urls.push(v);else if(v){if(v.url)urls.push(v.url);if(v.alt)urls.push(v.alt);}});});
@@ -192,14 +202,19 @@
      return playGroup.call(this,group,season,episode,groups);
     };
     if(typeof play==='function')c.play=function(group){
-     var best=choose(candidates({source:'manual',voices:[group]}));
+     if(enabled()&&desired&&!manual){
+      if(group.voice===desired.voice||group.voice===selectedUiVoice)group=desired.group;
+      else {var source=desired.source;cancel();manual=true;remember({source:source,voice:group.voice,raw:group.raw});}
+     }
+     var best=highestQuality(candidates({source:'manual',voices:[group]}));
      if(enabled()&&best){group=Object.assign({},group,{order:[best.quality],qualities:{}});group.qualities[best.quality]=best.group.qualities[best.quality];}
      return play.call(this,group);
     };
     function sourceOptions(options){
-     cancel();
+     cancel();var token=epoch;
        var originalSelect=options.onSelect;
        return Object.assign({},options,{items:[{title:'Подобрать источник и озвучку',homeAuto:true},{title:'Полный поиск по бесплатным источникам',homeAutoFull:true}].concat(options.items),onSelect:function(item){
+        if(!valid(token))return;
         if(item.homeAuto||item.homeAutoFull){L.Select.close();manual=false;var r=resume();scan(r.season,r.episode,!!item.homeAutoFull,function(result){if(result.best)adopt(result.best,true);else if(result.needsChoice)alternatives(result,function(best){adopt(best,true);});else notice('Подходящий поток не найден. Доступен ручной выбор');},null,true);}
         else {manual=true;first=false;return originalSelect&&originalSelect.apply(this,arguments);}
        }});
