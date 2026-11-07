@@ -5,12 +5,18 @@
  else if(root.Lampa&&root.Lampa.Component)api.install(root.Lampa,root);
 }(typeof window!=='undefined'?window:this,function(){
  'use strict';
+ function voiceKey(value){
+  var s=String(value||'').toLowerCase().replace(/ё/g,'е');if(s.normalize)s=s.normalize('NFKC');
+  s=s.replace(/^\s*\d+\s*[.)-]\s*/,'');
+  s=s.replace(/(^|[^a-zа-я0-9])(?:дубляж|дублированн(?:ый|ая|ое)|(?:одно|двух|много)голос(?:ый|ая|ое)|профессиональн(?:ый|ая|ое)|любительск(?:ий|ая|ое)|закадров(?:ый|ая|ое)|русский|русская|русские|рус|russian|rus|ru|dubbed|dubbing|voiceover)(?=$|[^a-zа-я0-9])/g,' ');
+  var letters='абвгдежзийклмнопрстуфхцчшщъыьэюя',latin=['a','b','v','g','d','e','zh','z','i','y','k','l','m','n','o','p','r','s','t','u','f','kh','ts','ch','sh','shch','','y','','e','yu','ya'];
+  return s.replace(/[а-я]/g,function(c){return latin[letters.indexOf(c)];}).replace(/[^a-z0-9]/g,'');
+ }
  function voiceTier(value){
-  var s=String(value||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-я0-9]/g,'');
-  if(/hdrezka(?:studio)?|твшоус|tvshows|redheadsound/.test(s))return 0;
-  if(/кубиквкубе|kubikvkube/.test(s))return 1;
-  if(/lostfilm|newstudio|alexfilm/.test(s))return 2;
-  if(/дублирован|дубляж|многоголос|двухголос|профессиональн|русск/.test(s)&&!/субтитр/.test(s))return 3;
+  var s=voiceKey(value);
+  if(/^(hdrezka(?:studio)?|tvshous|tvshows|redheadsound)$/.test(s))return 0;
+  if(s==='kubikvkube')return 1;
+  if(/^(lostfilm|newstudio|alexfilm)$/.test(s))return 2;
   return 99;
  }
  function resolution(value){
@@ -23,9 +29,7 @@
  function candidates(result,preferred){
   var out=[];if(!result||typeof result.source!=='string'||!Array.isArray(result.voices))return out;
   result.voices.forEach(function(group){
-   if(!group||!group.qualities)return;
-   var saved=preferred&&preferred.source===result.source&&preferred.voice===group.voice;
-   if(voiceTier(group.voice)===99&&!saved)return;
+   if(!group||typeof group.voice!=='string'||!group.voice.trim()||!group.qualities)return;
    Object.keys(group.qualities).forEach(function(q){
     var stream=group.qualities[q],url=typeof stream==='string'?stream:stream&&stream.url;
     if(typeof url!=='string'||!/^https?:\/\/[^\s]+$/i.test(url)||/cam|tsrip|telesync/i.test(q))return;
@@ -34,7 +38,18 @@
   });return out;
  }
  function choose(list,preferred){
-  var rows=list.filter(function(c){return !preferred||(c.source===preferred.source&&c.voice===preferred.voice);});
+  function highest(rows){return rows.slice().sort(function(a,b){return b.height-a.height;})[0]||null;}
+  function unique(rows){var ids=[];rows.forEach(function(c){var key=JSON.stringify([c.voice,c.raw]);if(ids.indexOf(key)<0)ids.push(key);});return ids.length===1;}
+  if(preferred){
+   var own=list.filter(function(c){return c.source===preferred.source;}),exact=own.filter(function(c){return c.voice===preferred.voice;});
+   if(exact.length)return unique(exact)?highest(exact):null;
+   var key=voiceKey(preferred.voice);if(!key)return null;
+   var aliases=own.filter(function(c){return voiceKey(c.voice)===key;});
+   if(aliases.length)return unique(aliases)?highest(aliases):null;
+   var other=list.filter(function(c){return voiceKey(c.voice)===key;}),valid=other.filter(function(c){return unique(other.filter(function(row){return row.source===c.source;}));});
+   return highest(valid);
+  }
+  var rows=list.filter(function(c){return c.tier<99;});
   rows.sort(function(a,b){return a.tier-b.tier||b.height-a.height;});return rows[0]||null;
  }
  function movieKey(movie){return movie&&movie.id?(movie.source||'tmdb')+':'+(movie.name||movie.first_air_date?'tv:':'movie:')+movie.id:null;}
@@ -206,5 +221,5 @@
   if(L.SettingsApi&&L.SettingsApi.addParam)L.SettingsApi.addParam({component:'player',param:{name:'source_auto_enabled',type:'trigger',default:true},field:{name:'Автовыбор источника BWA',description:'Сначала привычная озвучка, затем разрешение. Ручной выбор сохраняется'}});
   return true;
  }
- return {candidates:candidates,choose:choose,createScanner:createScanner,install:install};
+ return {voiceKey:voiceKey,candidates:candidates,choose:choose,createScanner:createScanner,install:install};
 }));

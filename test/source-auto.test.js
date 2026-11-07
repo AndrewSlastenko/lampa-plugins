@@ -16,9 +16,9 @@ test('resolution labels rank actual dimensions and keep a lower-resolution famil
  assert.equal(api.choose(list.slice(0,2)).quality,'2K');
  assert.equal(api.choose(ranked([voice('TVShows','720p'),voice('LostFilm','4K')])).voice,'TVShows');
 });
-test('unknown original-language, empty, CAM and non-http streams cannot win automatically',()=>{
+test('all named voices remain discoverable but unknown voices cannot win automatically',()=>{
  const list=ranked([voice('Original'),voice('English'),voice('ProviderName'),voice('TVShows','1080p',''),voice('LostFilm','CAMRip'),voice('HDrezka','1080p','javascript:alert(1)'),voice('Дублированный')]);
- assert.equal(list.length,1);assert.equal(list[0].voice,'Дублированный');
+ assert.equal(list.length,4);assert.equal(api.choose(list),null);
 });
 test('saved exact voice and provider beat pixels but missing saved voice is not substituted',()=>{
  const list=[...ranked([voice('LostFilm')]),...ranked([voice('LostFilm','4K'),voice('TVShows','4K')],'hdvb')];
@@ -26,12 +26,36 @@ test('saved exact voice and provider beat pixels but missing saved voice is not 
  assert.equal(api.choose(list,{source:'veoveo',voice:'AlexFilm'}),null);
 });
 
-test('TV3 dubbing is eligible and an explicit saved voice survives the automatic studio policy',()=>{
- for(const label of ['Дубляж ТВ3','01. Дубляж. ТВ-3'])assert.equal(api.choose(ranked([voice(label)]))?.voice,label);
+test('TV3 dubbing is discoverable and a saved voice survives studio preferences',()=>{
+ for(const label of ['Дубляж ТВ3','01. Дубляж. ТВ-3'])assert.equal(ranked([voice(label)])[0].voice,label);
  const preferred={source:'veoveo',voice:'ТВ3'};
  const rows=api.candidates({source:'veoveo',voices:[voice('ТВ3'),voice('Original')]},preferred);
  assert.equal(api.choose(rows,preferred).voice,'ТВ3');
- assert.equal(rows.some(row=>row.voice==='Original'),false);
+ assert.equal(rows.some(row=>row.voice==='Original'),true);
+});
+
+test('voice keys match spelling wrappers without losing brand digits or merging generic labels',()=>{
+ assert.equal(typeof api.voiceKey,'function');
+ assert.equal(api.voiceKey('01. Дубляж. ТВ-3 (RUS)'),api.voiceKey('TV3'));
+ assert.equal(api.voiceKey('02. Многоголосый. Кубик в Кубе [RU]'),api.voiceKey('Kubik v Kube'));
+ assert.equal(api.voiceKey('Дублированный'), '');assert.equal(api.voiceKey('Русский'), '');
+ assert.notEqual(api.voiceKey('Studio 1'),api.voiceKey('Studio 2'));
+ assert.notEqual(api.voiceKey('TVShows'),api.voiceKey('TVShow'));
+ assert.equal(api.choose(ranked([voice('NotTVShows')])),null);
+});
+
+test('saved aliases prefer their healthy provider then highest quality on another provider',()=>{
+ const preferred={source:'veoveo',voice:'01. Дубляж. ТВ-3 (RUS)'};
+ const own=ranked([voice('TV3','720p')]),other=ranked([voice('ТВ-3','4K')],'hdvb');
+ assert.equal(api.choose([...other,...own],preferred)?.source,'veoveo');
+ assert.equal(api.choose(other,preferred)?.source,'hdvb');
+ assert.equal(api.choose(ranked([voice('Дубляж')],'hdvb'),{source:'veoveo',voice:'Дубляж'}),null);
+});
+
+test('ambiguous provider aliases stay separate unless the saved label is exact',()=>{
+ const list=ranked([{...voice('01. Дубляж. ТВ-3'),raw:'a'},{...voice('TV3'),raw:'b'}]);
+ assert.equal(api.choose(list,{source:'veoveo',voice:'ТВ3'}),null);
+ assert.equal(api.choose(list,{source:'veoveo',voice:'TV3'})?.raw,'b');
 });
 function harness(responses={}){
  assert.equal(typeof api.createScanner,'function','bounded scanner must exist');
